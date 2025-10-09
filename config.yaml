@@ -1,0 +1,76 @@
+# Configuration du Honeypot SSH
+server:
+  host: "0.0.0.0"
+  port: 2222
+  max_connections: 10
+  connection_timeout: 300  # secondes
+  idle_timeout: 60        # secondes
+
+# Configuration de l'authentification factice
+auth:
+  fake_users:
+    - username: "admin"
+      password: "admin123"
+    - username: "root"
+      password: "password"
+    - username: "user"
+      password: "user"
+    - username: "test"
+      password: "test"
+
+# Configuration du shell factice
+shell:
+  prompt: "user@honeypot:~$ "
+  welcome_message: "Welcome to Ubuntu 20.04.3 LTS (GNU/Linux 5.4.0-74-generic x86_64)"
+  fake_commands:
+    - "ls"
+    - "pwd"
+    - "whoami"
+    - "ps"
+    - "netstat"
+    - "ifconfig"
+    - "cat"
+    - "grep"
+    - "find"
+    - "wget"
+    - "curl"
+
+# Configuration de la base de données
+database:
+  type: "sqlite"
+  path: "./honeypot.db"
+
+# Configuration du logging
+logging:
+  level: "info"
+  file: "./logs/honeypot.log"
+  max_size: 100  # MB
+  max_backups: 3
+  max_age: 28    # jours
+
+# Configuration de l'interface web
+web:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8080
+  static_path: "./web/static"
+  templates_path: "./web/templates"
+
+# Configuration des alertes
+alerts:
+  enabled: true
+  email:
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    username: ""
+    password: ""
+    from: ""
+    to: []
+  thresholds:
+    failed_attempts: 5
+    time_window: 300  # secondes
+
+# Configuration de la géolocalisation
+geolocation:
+  enabled: true
+  api_key: ""  # Clé API pour un service de géolocalisation
