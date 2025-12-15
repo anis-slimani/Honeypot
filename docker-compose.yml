@@ -9,7 +9,7 @@ services:
       - "8080:8080"  # Interface web
     volumes:
       - ./logs:/root/logs
-      - ./honeypot.db:/root/honeypot.db
+      - honeypot-data:/root/data
       - ./config.yaml:/root/config.yaml
     restart: unless-stopped
     networks:
@@ -20,4 +20,7 @@ services:
 networks:
   honeypot-network:
     driver: bridge
+
+volumes:
+  honeypot-data:
 

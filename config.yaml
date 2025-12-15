@@ -38,7 +38,7 @@ shell:
 # Configuration de la base de données
 database:
   type: "sqlite"
-  path: "./honeypot.db"
+  path: "/root/data/honeypot.db"
 
 # Configuration du logging
 logging:
