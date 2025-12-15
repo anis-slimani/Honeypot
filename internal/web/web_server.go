@@ -379,25 +379,59 @@ func (w *WebServer) handleConnections(wr http.ResponseWriter, r *http.Request) {
 
 // handleCommands gère les requêtes pour les commandes
 func (w *WebServer) handleCommands(wr http.ResponseWriter, r *http.Request) {
-	// Pour simplifier, on récupère toutes les commandes
-	// Dans une vraie implémentation, on aurait une fonction GetCommands avec limite
-	query := `SELECT id, connection_id, command, executed_at, response 
-			  FROM commands ORDER BY executed_at DESC LIMIT 50`
+	// Jointure avec connections pour récupérer l'IP et le username
+	query := `SELECT 
+				c.id, 
+				c.connection_id, 
+				c.command, 
+				c.executed_at, 
+				c.response,
+				COALESCE(cn.remote_addr, '') as remote_addr,
+				COALESCE(cn.username, '') as username
+			  FROM commands c
+			  LEFT JOIN connections cn ON c.connection_id = cn.id
+			  ORDER BY c.executed_at DESC LIMIT 100`
 	
 	rows, err := w.db.Query(query)
 	if err != nil {
+		w.logger.Errorf("Failed to query commands: %v", err)
 		http.Error(wr, "Failed to get commands", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
 
-	var commands []models.Command
+	type CommandWithUser struct {
+		models.Command
+		RemoteAddr string `json:"remote_addr"`
+		Username   string `json:"username"`
+	}
+
+	var commands []CommandWithUser
 	for rows.Next() {
-		var cmd models.Command
-		err := rows.Scan(&cmd.ID, &cmd.ConnectionID, &cmd.Command, &cmd.ExecutedAt, &cmd.Response)
+		var id, connectionID int
+		var cmdText, response, remoteAddr, username sql.NullString
+		var executedAt sql.NullTime
+		
+		err := rows.Scan(&id, &connectionID, &cmdText, &executedAt, 
+						&response, &remoteAddr, &username)
 		if err != nil {
+			w.logger.Errorf("Failed to scan command: %v", err)
 			continue
 		}
+		
+		// Créer la structure CommandWithUser
+		cmd := CommandWithUser{
+			Command: models.Command{
+				ID:           id,
+				ConnectionID: connectionID,
+				Command:      cmdText.String,
+				ExecutedAt:   executedAt.Time,
+				Response:     response.String,
+			},
+			RemoteAddr: remoteAddr.String,
+			Username:   username.String,
+		}
+		
 		commands = append(commands, cmd)
 	}
 

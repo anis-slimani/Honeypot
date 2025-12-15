@@ -344,3 +344,31 @@ func CheckBruteForce(remoteAddr string, timeWindow int, threshold int) (bool, in
 
 	return attempts >= threshold, attempts, nil
 }
+
+// CountFailedConnectionsInTimeWindow compte les connexions échouées dans une fenêtre de temps
+func CountFailedConnectionsInTimeWindow(remoteAddr string, timeWindowSeconds int) (int, error) {
+	query := `
+		SELECT COUNT(*) 
+		FROM connections 
+		WHERE remote_addr = ? 
+		AND connected_at > datetime('now', '-' || ? || ' seconds')
+		AND success = 0`
+	
+	var count int
+	err := db.QueryRow(query, remoteAddr, timeWindowSeconds).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
+// UpdateAlert met à jour une alerte
+func UpdateAlert(alert *models.Alert) error {
+	query := `UPDATE alerts 
+			  SET sent = ?, sent_at = ? 
+			  WHERE id = ?`
+	
+	_, err := db.Exec(query, alert.Sent, alert.SentAt, alert.ID)
+	return err
+}

@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  honeypot:
+    build: .
+    container_name: honey-ssh-honeypot
+    ports:
+      - "2222:2222"  # Port SSH du honeypot
+      - "8080:8080"  # Interface web
+    volumes:
+      - ./logs:/root/logs
+      - ./honeypot.db:/root/honeypot.db
+      - ./config.yaml:/root/config.yaml
+    restart: unless-stopped
+    networks:
+      - honeypot-network
+    environment:
+      - TZ=Europe/Paris
+
+networks:
+  honeypot-network:
+    driver: bridge
+

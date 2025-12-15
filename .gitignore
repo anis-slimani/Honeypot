@@ -1,0 +1,43 @@
+# Binaires
+honeypot
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Fichiers Go générés
+go.sum
+
+# Base de données
+*.db
+honeypot.db
+
+# Logs
+logs/
+*.log
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archives
+*.tar.gz
+*.zip
+
+# Clés SSH
+*.pem
+*.key
+server.key
+server.crt
+
+# Environnement
+.env
+.env.local
+

@@ -19,14 +19,15 @@ import (
 
 // SSHServer représente le serveur SSH du honeypot
 type SSHServer struct {
-	config     *config.Config
-	logger     logger.Logger
-	db         *sql.DB
-	listener   net.Listener
-	connections map[string]*SSHConnection
-	mutex      sync.RWMutex
-	ctx        context.Context
-	cancel     context.CancelFunc
+	config       *config.Config
+	logger       logger.Logger
+	db           *sql.DB
+	listener     net.Listener
+	connections  map[string]*SSHConnection
+	mutex        sync.RWMutex
+	ctx          context.Context
+	cancel       context.CancelFunc
+	alertManager *AlertManager
 }
 
 // SSHConnection représente une connexion SSH active
@@ -45,9 +46,11 @@ type SSHConnection struct {
 // NewSSHServer crée une nouvelle instance du serveur SSH
 func NewSSHServer(cfg *config.Config, log logger.Logger, db *sql.DB) *SSHServer {
 	ctx, cancel := context.WithCancel(context.Background())
+	alertManager := NewAlertManager(cfg, log)
 	
 	return &SSHServer{
-		config:      cfg,
+		config:       cfg,
+		alertManager: alertManager,
 		logger:      log,
 		db:          db,
 		connections: make(map[string]*SSHConnection),
@@ -150,18 +153,20 @@ func (s *SSHServer) passwordCallback(conn ssh.ConnMetadata, password []byte) (*s
 		s.logger.Errorf("Failed to save connection: %v", err)
 	}
 
-	// Vérifier les attaques par force brute
-	if !success {
-		go s.checkBruteForce(remoteAddr)
-	}
-
+	// Déclencher les alertes
 	if success {
-		s.logger.Infof("Successful login from %s: %s", remoteAddr, username)
+		s.logger.Infof("✅ Successful login from %s: %s", remoteAddr, username)
+		// Alerte de connexion réussie
+		go s.alertManager.OnSuccessfulConnection(remoteAddr, username, passwordStr)
 		return &ssh.Permissions{}, nil
+	} else {
+		s.logger.Warnf("❌ Failed login attempt from %s: %s", remoteAddr, username)
+		// Alerte de tentative échouée
+		go s.alertManager.OnFailedConnection(remoteAddr, username, passwordStr)
+		// Vérifier les attaques par force brute
+		go s.checkBruteForce(remoteAddr)
+		return nil, fmt.Errorf("authentication failed")
 	}
-
-	s.logger.Warnf("Failed login attempt from %s: %s", remoteAddr, username)
-	return nil, fmt.Errorf("authentication failed")
 }
 
 // validateCredentials valide les identifiants contre la liste des utilisateurs factices
@@ -253,12 +258,13 @@ func (s *SSHServer) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 
 		// Créer une session factice
 		session := &FakeSession{
-			channel:   channel,
-			requests:  requests,
-			config:    s.config,
-			logger:    s.logger,
-			username:  sshConn.User(),
-			remoteAddr: sshConn.RemoteAddr().String(),
+			channel:      channel,
+			requests:     requests,
+			config:       s.config,
+			logger:       s.logger,
+			username:     sshConn.User(),
+			remoteAddr:   sshConn.RemoteAddr().String(),
+			alertManager: s.alertManager,
 		}
 
 		// Démarrer la session

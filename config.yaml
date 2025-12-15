@@ -51,10 +51,10 @@ logging:
 # Configuration de l'interface web
 web:
   enabled: true
-  host: "127.0.0.1"
+  host: "0.0.0.0"
   port: 8080
-  static_path: "./web/static"
-  templates_path: "./web/templates"
+  static_path: "./static"
+  templates_path: "./templates"
 
 # Configuration des alertes
 alerts:

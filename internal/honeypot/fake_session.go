@@ -1,13 +1,13 @@
 package honeypot
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 	"honey/internal/config"
 	"honey/internal/database"
 	"honey/internal/logger"
@@ -16,18 +16,23 @@ import (
 
 // FakeSession représente une session SSH factice
 type FakeSession struct {
-	channel    ssh.Channel
-	requests   <-chan *ssh.Request
-	config     *config.Config
-	logger     logger.Logger
-	username   string
-	remoteAddr string
+	channel      ssh.Channel
+	requests     <-chan *ssh.Request
+	config       *config.Config
+	logger       logger.Logger
+	username     string
+	remoteAddr   string
 	connectionID int
+	currentDir   string // Répertoire courant simulé
+	alertManager *AlertManager
 }
 
 // handle gère une session SSH factice
 func (s *FakeSession) handle() {
 	defer s.channel.Close()
+
+	// Initialiser le répertoire courant
+	s.currentDir = "/home/user"
 
 	// Enregistrer la connexion réussie
 	connection := &models.Connection{
@@ -43,69 +48,28 @@ func (s *FakeSession) handle() {
 		s.connectionID = connection.ID
 	}
 
-	// Traiter les requêtes de la session
+	// Traiter les requêtes SSH en arrière-plan
 	go s.handleRequests()
 
-	// Afficher le message de bienvenue
-	s.sendMessage(s.config.Shell.WelcomeMessage + "\n")
-	s.sendMessage("Last login: " + time.Now().Format("Mon Jan 2 15:04:05 2006") + " from " + s.remoteAddr + "\n")
-
-	// Démarrer le shell factice
-	s.runFakeShell()
+	// Démarrer le shell interactif immédiatement
+	s.runInteractiveShell()
 }
 
-// handleRequests traite les requêtes SSH
+// handleRequests traite les requêtes SSH (pty-req, shell, window-change, etc.)
 func (s *FakeSession) handleRequests() {
 	for req := range s.requests {
+		s.logger.Debugf("SSH request '%s' from %s (WantReply=%v)", req.Type, s.remoteAddr, req.WantReply)
+		
 		switch req.Type {
-		case "shell":
-			// Accepter la requête shell
-			if req.WantReply {
-				req.Reply(true, nil)
-			}
-		case "pty-req":
-			// Accepter la requête PTY
-			if req.WantReply {
-				req.Reply(true, nil)
-			}
-		case "window-change":
-			// Accepter le changement de taille de fenêtre
+		case "shell", "pty-req", "window-change", "env":
+			// Accepter toutes ces requêtes
 			if req.WantReply {
 				req.Reply(true, nil)
 			}
 		case "exec":
-			// Support des commandes non interactives: ssh host "cmd"
-			var payload struct {
-				Command string `ssh:"string"`
-			}
-			if err := ssh.Unmarshal(req.Payload, &payload); err != nil {
-				if req.WantReply {
-					req.Reply(false, nil)
-				}
-				continue
-			}
-
-			// Enregistrer et exécuter la commande factice
-			cmd := &models.Command{
-				ConnectionID: s.connectionID,
-				Command:      strings.TrimSpace(payload.Command),
-				ExecutedAt:   time.Now(),
-			}
-			if err := database.SaveCommand(cmd); err != nil {
-				s.logger.Errorf("Failed to save command (exec): %v", err)
-			}
-
-			s.logger.Infof("Exec command from %s: %s", s.remoteAddr, payload.Command)
-			response := s.executeFakeCommand(payload.Command)
-			s.sendMessage(response)
-
-			if req.WantReply {
-				req.Reply(true, nil)
-			}
-
-			// Fermer le canal après l'exec comme le ferait un vrai serveur
-			s.channel.CloseWrite()
-			return
+			// Commande non-interactive : ssh host "cmd"
+			s.handleExecRequest(req)
+			return // Terminer après exec
 		default:
 			// Refuser les autres requêtes
 			if req.WantReply {
@@ -115,52 +79,124 @@ func (s *FakeSession) handleRequests() {
 	}
 }
 
-// runFakeShell exécute le shell factice
-func (s *FakeSession) runFakeShell() {
-	reader := bufio.NewReader(s.channel)
+// handleExecRequest gère les commandes exec (non-interactives)
+func (s *FakeSession) handleExecRequest(req *ssh.Request) {
+	var payload struct {
+		Command string `ssh:"string"`
+	}
 	
-	for {
-		// Afficher le prompt
-		s.sendMessage(s.config.Shell.Prompt)
+	if err := ssh.Unmarshal(req.Payload, &payload); err != nil {
+		if req.WantReply {
+			req.Reply(false, nil)
+		}
+		return
+	}
 
-		// Lire la commande (pas de timeout pour éviter les coupures)
-		line, err := reader.ReadString('\n')
+	command := strings.TrimSpace(payload.Command)
+	s.logger.Infof("Exec command from %s: %s", s.remoteAddr, command)
+
+	// Enregistrer la commande
+	cmd := &models.Command{
+		ConnectionID: s.connectionID,
+		Command:      command,
+		ExecutedAt:   time.Now(),
+	}
+	if err := database.SaveCommand(cmd); err != nil {
+		s.logger.Errorf("Failed to save command: %v", err)
+	}
+
+	// Exécuter et envoyer la réponse
+	response := s.executeFakeCommand(command)
+	if response != "" {
+		s.channel.Write([]byte(response))
+	}
+
+	if req.WantReply {
+		req.Reply(true, nil)
+	}
+
+	// Fermer le canal
+	s.channel.CloseWrite()
+}
+
+// runInteractiveShell démarre un shell interactif en utilisant golang.org/x/term
+func (s *FakeSession) runInteractiveShell() {
+	// Créer un terminal virtuel avec golang.org/x/term
+	terminal := term.NewTerminal(s.channel, s.config.Shell.Prompt)
+
+	// Message de bienvenue
+	welcome := fmt.Sprintf("%s\nLast login: %s from %s\n",
+		s.config.Shell.WelcomeMessage,
+		time.Now().Format("Mon Jan 2 15:04:05 2006"),
+		s.remoteAddr)
+	
+	terminal.Write([]byte(welcome))
+
+	s.logger.Infof("Interactive shell started for %s", s.remoteAddr)
+
+	// Boucle de lecture des commandes
+	for {
+		// ReadLine() bloque jusqu'à ce que l'utilisateur appuie sur Entrée
+		// Il gère automatiquement l'écho, backspace, Ctrl+C, etc.
+		line, err := terminal.ReadLine()
+		
 		if err != nil {
-			if err != io.EOF {
-				s.logger.Errorf("Error reading command: %v", err)
+			if err == io.EOF {
+				s.logger.Infof("Client disconnected: %s", s.remoteAddr)
+			} else {
+				s.logger.Errorf("Error reading line from %s: %v", s.remoteAddr, err)
 			}
 			break
 		}
 
 		// Nettoyer la commande
 		command := strings.TrimSpace(line)
+
+		// Ignorer les lignes vides
 		if command == "" {
 			continue
 		}
 
+		s.logger.Infof("Command from %s: %s", s.remoteAddr, command)
+
 		// Gérer les commandes de sortie
 		if command == "exit" || command == "logout" {
-			s.sendMessage("Goodbye!\n")
+			terminal.Write([]byte("Goodbye!\n"))
+			s.logger.Infof("User %s logged out", s.remoteAddr)
 			break
 		}
 
-		// Enregistrer la commande
+		// Enregistrer la commande dans la base de données
 		cmd := &models.Command{
 			ConnectionID: s.connectionID,
 			Command:      command,
 			ExecutedAt:   time.Now(),
 		}
-
 		if err := database.SaveCommand(cmd); err != nil {
 			s.logger.Errorf("Failed to save command: %v", err)
 		}
 
-		s.logger.Infof("Command executed from %s: %s", s.remoteAddr, command)
+		// Vérifier si c'est une commande dangereuse et déclencher une alerte
+		if s.alertManager != nil {
+			go s.alertManager.OnDangerousCommand(s.remoteAddr, s.username, command)
+		}
 
 		// Exécuter la commande factice
 		response := s.executeFakeCommand(command)
-		s.sendMessage(response)
+		if response != "" {
+			terminal.Write([]byte(response))
+		}
+
+		// Mettre à jour le prompt si cd a changé le répertoire
+		parts := strings.Fields(command)
+		if len(parts) > 0 && parts[0] == "cd" {
+			// Le répertoire a changé, mettre à jour le prompt
+			newPrompt := fmt.Sprintf("user@honeypot:%s$ ", s.currentDir)
+			terminal.SetPrompt(newPrompt)
+		}
 	}
+
+	s.logger.Infof("Interactive shell ended for %s", s.remoteAddr)
 }
 
 // executeFakeCommand exécute une commande factice
@@ -178,13 +214,27 @@ func (s *FakeSession) executeFakeCommand(command string) string {
 		return s.fakeLs(args)
 	case "pwd":
 		return s.fakePwd()
+	case "cd":
+		return s.fakeCd(args)
 	case "whoami":
 		return s.fakeWhoami()
+	case "mkdir":
+		return s.fakeMkdir(args)
+	case "touch":
+		return s.fakeTouch(args)
+	case "rm":
+		return s.fakeRm(args)
+	case "cp":
+		return s.fakeCp(args)
+	case "mv":
+		return s.fakeMv(args)
+	case "echo":
+		return s.fakeEcho(args)
 	case "ps":
 		return s.fakePs()
 	case "netstat":
 		return s.fakeNetstat()
-	case "ifconfig":
+	case "ifconfig", "ip":
 		return s.fakeIfconfig()
 	case "cat":
 		return s.fakeCat(args)
@@ -221,23 +271,200 @@ func (s *FakeSession) executeFakeCommand(command string) string {
 
 // fakeLs simule la commande ls
 func (s *FakeSession) fakeLs(args []string) string {
-	output := "total 48\n"
-	output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
-	output += "drwxr-xr-x  3 root root 4096 Jan 15 10:30 ..\n"
-	output += "-rw-r--r--  1 user user  220 Jan 15 10:30 .bash_logout\n"
-	output += "-rw-r--r--  1 user user 3771 Jan 15 10:30 .bashrc\n"
-	output += "-rw-r--r--  1 user user  807 Jan 15 10:30 .profile\n"
-	output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 Documents\n"
-	output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 Downloads\n"
-	output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 Pictures\n"
-	output += "-rw-r--r--  1 user user   25 Jan 15 10:30 secret.txt\n"
-	output += "-rwxr-xr-x  1 user user 8192 Jan 15 10:30 script.sh\n"
-	return output
+	// Afficher le contenu en fonction du répertoire courant
+	switch s.currentDir {
+	case "/home/user":
+		output := "total 48\n"
+		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
+		output += "drwxr-xr-x  3 root root 4096 Jan 15 10:30 ..\n"
+		output += "-rw-r--r--  1 user user  220 Jan 15 10:30 .bash_logout\n"
+		output += "-rw-r--r--  1 user user 3771 Jan 15 10:30 .bashrc\n"
+		output += "-rw-r--r--  1 user user  807 Jan 15 10:30 .profile\n"
+		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 Documents\n"
+		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 Downloads\n"
+		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 Pictures\n"
+		output += "-rw-r--r--  1 user user   25 Jan 15 10:30 secret.txt\n"
+		output += "-rwxr-xr-x  1 user user 8192 Jan 15 10:30 script.sh\n"
+		return output
+	case "/home/user/Documents":
+		output := "total 16\n"
+		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
+		output += "drwxr-xr-x  5 user user 4096 Jan 15 10:30 ..\n"
+		output += "-rw-r--r--  1 user user 2048 Jan 15 10:30 notes.txt\n"
+		output += "-rw-r--r--  1 user user 4096 Jan 15 10:30 report.pdf\n"
+		return output
+	case "/home/user/Downloads":
+		output := "total 12\n"
+		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
+		output += "drwxr-xr-x  5 user user 4096 Jan 15 10:30 ..\n"
+		output += "-rw-r--r--  1 user user 1024 Jan 15 10:30 file.zip\n"
+		return output
+	case "/home/user/Pictures":
+		output := "total 8\n"
+		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
+		output += "drwxr-xr-x  5 user user 4096 Jan 15 10:30 ..\n"
+		output += "-rw-r--r--  1 user user 2048 Jan 15 10:30 photo.jpg\n"
+		return output
+	case "/":
+		output := "total 84\n"
+		output += "drwxr-xr-x  17 root root  4096 Jan 15 10:30 .\n"
+		output += "drwxr-xr-x  17 root root  4096 Jan 15 10:30 ..\n"
+		output += "drwxr-xr-x   2 root root  4096 Jan 15 10:30 bin\n"
+		output += "drwxr-xr-x   3 root root  4096 Jan 15 10:30 boot\n"
+		output += "drwxr-xr-x  16 root root  3840 Jan 15 10:30 dev\n"
+		output += "drwxr-xr-x  94 root root  4096 Jan 15 10:30 etc\n"
+		output += "drwxr-xr-x   3 root root  4096 Jan 15 10:30 home\n"
+		output += "drwxr-xr-x  15 root root  4096 Jan 15 10:30 lib\n"
+		output += "drwxr-xr-x   2 root root  4096 Jan 15 10:30 media\n"
+		output += "drwxr-xr-x   2 root root  4096 Jan 15 10:30 mnt\n"
+		output += "drwxr-xr-x   2 root root  4096 Jan 15 10:30 opt\n"
+		output += "drwxr-xr-x   2 root root  4096 Jan 15 10:30 root\n"
+		output += "drwxr-xr-x   6 root root  4096 Jan 15 10:30 run\n"
+		output += "drwxr-xr-x   2 root root  4096 Jan 15 10:30 sbin\n"
+		output += "drwxr-xr-x   2 root root  4096 Jan 15 10:30 tmp\n"
+		output += "drwxr-xr-x  10 root root  4096 Jan 15 10:30 usr\n"
+		output += "drwxr-xr-x  12 root root  4096 Jan 15 10:30 var\n"
+		return output
+	case "/etc":
+		output := "total 20\n"
+		output += "drwxr-xr-x  2 root root 4096 Jan 15 10:30 .\n"
+		output += "drwxr-xr-x 17 root root 4096 Jan 15 10:30 ..\n"
+		output += "-rw-r--r--  1 root root  220 Jan 15 10:30 passwd\n"
+		output += "-rw-r--r--  1 root root  100 Jan 15 10:30 hosts\n"
+		output += "-rw-r--r--  1 root root  150 Jan 15 10:30 hostname\n"
+		return output
+	case "/tmp":
+		output := "total 4\n"
+		output += "drwxrwxrwt  2 root root 4096 Jan 15 10:30 .\n"
+		output += "drwxr-xr-x 17 root root 4096 Jan 15 10:30 ..\n"
+		return output
+	default:
+		return "total 0\n"
+	}
 }
 
 // fakePwd simule la commande pwd
 func (s *FakeSession) fakePwd() string {
-	return "/home/user\n"
+	return s.currentDir + "\n"
+}
+
+// fakeCd simule la commande cd
+func (s *FakeSession) fakeCd(args []string) string {
+	if len(args) == 0 {
+		s.currentDir = "/home/user"
+		return ""
+	}
+	
+	target := args[0]
+	
+	// Gérer les chemins spéciaux
+	if target == "~" || target == "~/" {
+		s.currentDir = "/home/user"
+		return ""
+	}
+	
+	if target == ".." {
+		// Remonter d'un niveau
+		if s.currentDir != "/" {
+			parts := strings.Split(strings.Trim(s.currentDir, "/"), "/")
+			if len(parts) > 1 {
+				s.currentDir = "/" + strings.Join(parts[:len(parts)-1], "/")
+			} else {
+				s.currentDir = "/"
+			}
+		}
+		return ""
+	}
+	
+	if target == "." {
+		return ""
+	}
+	
+	// Chemins absolus
+	if strings.HasPrefix(target, "/") {
+		// Simuler quelques dossiers existants
+		validDirs := []string{"/", "/home", "/home/user", "/home/user/Documents", 
+			"/home/user/Downloads", "/home/user/Pictures", "/etc", "/var", "/tmp", "/root"}
+		for _, dir := range validDirs {
+			if target == dir {
+				s.currentDir = target
+				return ""
+			}
+		}
+		return fmt.Sprintf("bash: cd: %s: No such file or directory\n", target)
+	}
+	
+	// Chemins relatifs
+	newPath := s.currentDir + "/" + target
+	newPath = strings.ReplaceAll(newPath, "//", "/")
+	
+	// Simuler quelques sous-dossiers
+	validDirs := map[string][]string{
+		"/home/user": {"Documents", "Downloads", "Pictures"},
+		"/":          {"home", "etc", "var", "tmp", "root", "usr", "bin"},
+		"/home":      {"user"},
+	}
+	
+	if dirs, ok := validDirs[s.currentDir]; ok {
+		for _, dir := range dirs {
+			if target == dir {
+				s.currentDir = newPath
+				return ""
+			}
+		}
+	}
+	
+	return fmt.Sprintf("bash: cd: %s: No such file or directory\n", target)
+}
+
+// fakeMkdir simule la commande mkdir
+func (s *FakeSession) fakeMkdir(args []string) string {
+	if len(args) == 0 {
+		return "mkdir: missing operand\n"
+	}
+	// Simuler la création réussie
+	return ""
+}
+
+// fakeTouch simule la commande touch
+func (s *FakeSession) fakeTouch(args []string) string {
+	if len(args) == 0 {
+		return "touch: missing file operand\n"
+	}
+	// Simuler la création réussie
+	return ""
+}
+
+// fakeRm simule la commande rm
+func (s *FakeSession) fakeRm(args []string) string {
+	if len(args) == 0 {
+		return "rm: missing operand\n"
+	}
+	// Simuler la suppression réussie
+	return ""
+}
+
+// fakeCp simule la commande cp
+func (s *FakeSession) fakeCp(args []string) string {
+	if len(args) < 2 {
+		return "cp: missing file operand\n"
+	}
+	// Simuler la copie réussie
+	return ""
+}
+
+// fakeMv simule la commande mv
+func (s *FakeSession) fakeMv(args []string) string {
+	if len(args) < 2 {
+		return "mv: missing file operand\n"
+	}
+	// Simuler le déplacement réussi
+	return ""
+}
+
+// fakeEcho simule la commande echo
+func (s *FakeSession) fakeEcho(args []string) string {
+	return strings.Join(args, " ") + "\n"
 }
 
 // fakeWhoami simule la commande whoami
@@ -285,15 +512,30 @@ func (s *FakeSession) fakeCat(args []string) string {
 	}
 	
 	filename := args[0]
+	
+	// Gérer les chemins relatifs et absolus
+	if !strings.HasPrefix(filename, "/") {
+		filename = s.currentDir + "/" + filename
+		filename = strings.ReplaceAll(filename, "//", "/")
+	}
+	
 	switch filename {
-	case "secret.txt":
+	case "/home/user/secret.txt":
 		return "This is a secret file with sensitive data!\n"
+	case "/home/user/script.sh":
+		return "#!/bin/bash\n# Backup script\ntar -czf backup.tar.gz /home/user/*\necho 'Backup completed'\n"
+	case "/home/user/Documents/notes.txt":
+		return "Important notes:\n- Server maintenance on Sunday\n- Password: admin123\n- Database backup location: /var/backups\n"
+	case "/home/user/.bashrc":
+		return "# .bashrc\nexport PATH=$PATH:/usr/local/bin\nalias ll='ls -la'\n"
 	case "/etc/passwd":
-		return "root:x:0:0:root:/root:/bin/bash\nuser:x:1000:1000:user:/home/user:/bin/bash\n"
+		return "root:x:0:0:root:/root:/bin/bash\nuser:x:1000:1000:user:/home/user:/bin/bash\nadmin:x:1001:1001:admin:/home/admin:/bin/bash\n"
 	case "/etc/hosts":
-		return "127.0.0.1 localhost\n192.168.1.100 honeypot\n"
+		return "127.0.0.1 localhost\n192.168.1.100 honeypot\n192.168.1.1 gateway\n"
+	case "/etc/hostname":
+		return "honeypot\n"
 	default:
-		return fmt.Sprintf("cat: %s: No such file or directory\n", filename)
+		return fmt.Sprintf("cat: %s: No such file or directory\n", args[0])
 	}
 }
 
@@ -384,6 +626,14 @@ func (s *FakeSession) fakeHistory() string {
 
 // sendMessage envoie un message au client
 func (s *FakeSession) sendMessage(message string) {
-	s.channel.Write([]byte(message))
+	if len(message) > 0 {
+		_, err := s.channel.Write([]byte(message))
+		if err != nil {
+			// Ne pas logger les erreurs EOF (c'est normal quand le canal est fermé)
+			if err != io.EOF && !strings.Contains(err.Error(), "EOF") {
+				s.logger.Errorf("Error writing to channel: %v", err)
+			}
+		}
+	}
 }
 

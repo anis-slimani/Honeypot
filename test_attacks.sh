@@ -6,7 +6,7 @@
 set -e
 
 # Configuration
-HONEYPOT_HOST="192.168.1.144"
+HONEYPOT_HOST="192.168.107.2"
 HONEYPOT_PORT="2222"
 SSH_OPTS="-o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 

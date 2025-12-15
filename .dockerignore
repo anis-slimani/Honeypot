@@ -1,0 +1,27 @@
+# Fichiers à ignorer lors du build Docker
+honeypot
+honeypot.db
+*.tar.gz
+*.log
+
+# Dossiers temporaires
+logs/
+.git/
+.vscode/
+.idea/
+
+# Fichiers de développement
+*.md
+CHANGEMENTS.txt
+CORRECTIONS*.txt
+SYSTEME_ALERTES.txt
+ALERTES_RESUME.txt
+check_db.sh
+test_attacks.sh
+deploy.sh
+Makefile
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
