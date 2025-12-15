@@ -9,11 +9,12 @@ WORKDIR /app
 # Copier les fichiers de dépendances
 COPY go.mod ./
 
-# Générer go.sum et télécharger les dépendances
-RUN go mod download && go mod tidy
-
-# Copier le code source
+# Copier le code source (nécessaire pour go mod tidy)
 COPY . .
+
+# Télécharger les dépendances et générer go.sum
+RUN go mod download
+RUN go mod tidy
 
 # Compiler l'application
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o honeypot .
