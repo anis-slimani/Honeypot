@@ -16,8 +16,9 @@ COPY . .
 RUN go mod download
 RUN go mod tidy
 
-# Compiler l'application
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o honeypot .
+# Compiler l'application avec les flags pour sqlite3 sur Alpine
+ENV CGO_CFLAGS="-D_LARGEFILE64_SOURCE"
+RUN CGO_ENABLED=1 GOOS=linux go build -o honeypot .
 
 # Image finale légère
 FROM alpine:latest
