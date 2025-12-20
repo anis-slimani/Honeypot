@@ -14,6 +14,7 @@ type Config struct {
 	Database    DatabaseConfig    `yaml:"database"`
 	Logging     LoggingConfig     `yaml:"logging"`
 	Web         WebConfig         `yaml:"web"`
+	HTTP        HTTPConfig        `yaml:"http"`
 	Alerts      AlertsConfig      `yaml:"alerts"`
 	Geolocation GeolocationConfig `yaml:"geolocation"`
 }
@@ -98,6 +99,61 @@ type GeolocationConfig struct {
 	APIKey  string `yaml:"api_key"`
 }
 
+// HTTPConfig configuration du honeypot HTTP/HTTPS
+type HTTPConfig struct {
+	Enabled      bool             `yaml:"enabled"`
+	Host         string           `yaml:"host"`
+	Port         int              `yaml:"port"`
+	TLS          TLSConfig        `yaml:"tls"`
+	Applications ApplicationsConfig `yaml:"applications"`
+}
+
+// TLSConfig configuration TLS
+type TLSConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Port     int    `yaml:"port"`
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+}
+
+// ApplicationsConfig configuration des applications honeypot
+type ApplicationsConfig struct {
+	WordPress   WordPressConfig   `yaml:"wordpress"`
+	PHPMyAdmin  PHPMyAdminConfig  `yaml:"phpmyadmin"`
+	Upload      UploadConfig      `yaml:"upload"`
+	AdminPanels AdminPanelsConfig `yaml:"admin_panels"`
+}
+
+// WordPressConfig configuration WordPress honeypot
+type WordPressConfig struct {
+	Enabled          bool       `yaml:"enabled"`
+	Path             string     `yaml:"path"`
+	Version          string     `yaml:"version"`
+	FakeCredentials  []FakeUser `yaml:"fake_credentials"`
+}
+
+// PHPMyAdminConfig configuration phpMyAdmin honeypot
+type PHPMyAdminConfig struct {
+	Enabled          bool       `yaml:"enabled"`
+	Path             string     `yaml:"path"`
+	Version          string     `yaml:"version"`
+	FakeCredentials  []FakeUser `yaml:"fake_credentials"`
+}
+
+// UploadConfig configuration upload honeypot
+type UploadConfig struct {
+	Enabled        bool     `yaml:"enabled"`
+	Paths          []string `yaml:"paths"`
+	MaxFileSize    int64    `yaml:"max_file_size"`
+	QuarantineDir  string   `yaml:"quarantine_dir"`
+	VirusTotalKey  string   `yaml:"virustotal_api_key"`
+}
+
+// AdminPanelsConfig configuration admin panels
+type AdminPanelsConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
 // Load charge la configuration depuis un fichier YAML
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -175,6 +231,35 @@ func (c *Config) validate() error {
 	}
 	if c.Alerts.Thresholds.TimeWindow == 0 {
 		c.Alerts.Thresholds.TimeWindow = 300
+	}
+
+	// Valeurs par défaut pour HTTP
+	if c.HTTP.Host == "" {
+		c.HTTP.Host = "0.0.0.0"
+	}
+	if c.HTTP.Port == 0 {
+		c.HTTP.Port = 80
+	}
+	if c.HTTP.TLS.Port == 0 {
+		c.HTTP.TLS.Port = 443
+	}
+	if c.HTTP.Applications.WordPress.Path == "" {
+		c.HTTP.Applications.WordPress.Path = "/wordpress"
+	}
+	if c.HTTP.Applications.WordPress.Version == "" {
+		c.HTTP.Applications.WordPress.Version = "5.8.1"
+	}
+	if c.HTTP.Applications.PHPMyAdmin.Path == "" {
+		c.HTTP.Applications.PHPMyAdmin.Path = "/phpmyadmin"
+	}
+	if c.HTTP.Applications.PHPMyAdmin.Version == "" {
+		c.HTTP.Applications.PHPMyAdmin.Version = "4.8.1"
+	}
+	if c.HTTP.Applications.Upload.MaxFileSize == 0 {
+		c.HTTP.Applications.Upload.MaxFileSize = 10485760 // 10MB
+	}
+	if c.HTTP.Applications.Upload.QuarantineDir == "" {
+		c.HTTP.Applications.Upload.QuarantineDir = "./uploads"
 	}
 
 	return nil

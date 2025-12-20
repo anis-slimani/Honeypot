@@ -5,17 +5,22 @@ services:
     build: .
     container_name: honey-ssh-honeypot
     ports:
-      - "2222:2222"  # Port SSH du honeypot
-      - "8080:8080"  # Interface web
+      - "2222:2222"  # SSH honeypot (fake SSH server)
+      - "80:80"      # HTTP honeypot (WordPress, phpMyAdmin, etc.)
+      - "8080:8080"  # Web dashboard with dark mode
+      - "443:443"    # HTTPS honeypot (if TLS enabled)
     volumes:
       - ./logs:/root/logs
       - honeypot-data:/root/data
+      - honeypot-uploads:/root/uploads
       - ./config.yaml:/root/config.yaml
     restart: unless-stopped
     networks:
       - honeypot-network
     environment:
       - TZ=Europe/Paris
+    cap_add:
+      - NET_BIND_SERVICE  # Permet de binder sur les ports < 1024
 
 networks:
   honeypot-network:
@@ -23,4 +28,5 @@ networks:
 
 volumes:
   honeypot-data:
+  honeypot-uploads:
 

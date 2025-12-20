@@ -83,6 +83,67 @@ func createTables() error {
 			sent BOOLEAN,
 			sent_at DATETIME
 		)`,
+		`CREATE TABLE IF NOT EXISTS http_requests (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			remote_addr TEXT NOT NULL,
+			method TEXT,
+			path TEXT,
+			query_string TEXT,
+			user_agent TEXT,
+			referer TEXT,
+			headers TEXT,
+			body TEXT,
+			timestamp DATETIME,
+			country TEXT,
+			city TEXT,
+			response_code INTEGER
+		)`,
+		`CREATE TABLE IF NOT EXISTS http_attacks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			request_id INTEGER NOT NULL,
+			attack_type TEXT,
+			severity TEXT,
+			payload TEXT,
+			matched_pattern TEXT,
+			response_strategy TEXT,
+			timestamp DATETIME,
+			FOREIGN KEY (request_id) REFERENCES http_requests (id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS uploaded_files (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			request_id INTEGER NOT NULL,
+			filename TEXT,
+			original_filename TEXT,
+			size INTEGER,
+			content_type TEXT,
+			md5_hash TEXT,
+			sha256_hash TEXT,
+			file_path TEXT,
+			is_malicious BOOLEAN,
+			virustotal_result TEXT,
+			timestamp DATETIME,
+			FOREIGN KEY (request_id) REFERENCES http_requests (id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS scanner_detections (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			remote_addr TEXT NOT NULL,
+			scanner_type TEXT,
+			version TEXT,
+			request_count INTEGER,
+			requests_per_second REAL,
+			detected_at DATETIME,
+			last_seen DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS http_credentials (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			request_id INTEGER NOT NULL,
+			application TEXT,
+			username TEXT,
+			password TEXT,
+			success BOOLEAN,
+			timestamp DATETIME,
+			FOREIGN KEY (request_id) REFERENCES http_requests (id)
+		)`,
 	}
 
 	for _, query := range queries {
@@ -102,18 +163,28 @@ func Close() error {
 	return nil
 }
 
-// SaveConnection sauvegarde une connexion
-func SaveConnection(conn *models.Connection) error {
-	query := `INSERT INTO connections 
+// SaveConnection sauvegarde une connexion et retourne l'ID inséré
+func SaveConnection(conn *models.Connection) (int, error) {
+	query := `INSERT INTO connections
 		(remote_addr, username, password, success, connected_at, disconnected_at, duration, user_agent, country, city, isp)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	
-	_, err := db.Exec(query,
+
+	result, err := db.Exec(query,
 		conn.RemoteAddr, conn.Username, conn.Password, conn.Success,
 		conn.ConnectedAt, conn.DisconnectedAt, conn.Duration,
 		conn.UserAgent, conn.Country, conn.City, conn.ISP)
-	
-	return err
+
+	if err != nil {
+		return 0, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	conn.ID = int(id)
+	return int(id), nil
 }
 
 // SaveCommand sauvegarde une commande
@@ -365,10 +436,145 @@ func CountFailedConnectionsInTimeWindow(remoteAddr string, timeWindowSeconds int
 
 // UpdateAlert met à jour une alerte
 func UpdateAlert(alert *models.Alert) error {
-	query := `UPDATE alerts 
-			  SET sent = ?, sent_at = ? 
+	query := `UPDATE alerts
+			  SET sent = ?, sent_at = ?
 			  WHERE id = ?`
-	
+
 	_, err := db.Exec(query, alert.Sent, alert.SentAt, alert.ID)
 	return err
+}
+
+// SaveHTTPRequest saves an HTTP request and returns its ID
+func SaveHTTPRequest(req *models.HTTPRequest) (int, error) {
+	query := `INSERT INTO http_requests
+		(remote_addr, method, path, query_string, user_agent, referer, headers, body, timestamp, country, city, response_code)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	result, err := db.Exec(query,
+		req.RemoteAddr, req.Method, req.Path, req.QueryString,
+		req.UserAgent, req.Referer, req.Headers, req.Body,
+		req.Timestamp, req.Country, req.City, req.ResponseCode)
+
+	if err != nil {
+		return 0, err
+	}
+
+	id, err := result.LastInsertId()
+	return int(id), err
+}
+
+// UpdateHTTPRequestResponse updates the response code for an HTTP request
+func UpdateHTTPRequestResponse(requestID, responseCode int) error {
+	query := `UPDATE http_requests SET response_code = ? WHERE id = ?`
+	_, err := db.Exec(query, responseCode, requestID)
+	return err
+}
+
+// SaveHTTPAttack saves an HTTP attack
+func SaveHTTPAttack(attack *models.HTTPAttack) error {
+	query := `INSERT INTO http_attacks
+		(request_id, attack_type, severity, payload, matched_pattern, response_strategy, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := db.Exec(query,
+		attack.RequestID, attack.AttackType, attack.Severity,
+		attack.Payload, attack.MatchedPattern, attack.ResponseStrategy,
+		attack.Timestamp)
+
+	return err
+}
+
+// SaveUploadedFile saves an uploaded file record
+func SaveUploadedFile(file *models.UploadedFile) error {
+	query := `INSERT INTO uploaded_files
+		(request_id, filename, original_filename, size, content_type, md5_hash, sha256_hash, file_path, is_malicious, virustotal_result, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := db.Exec(query,
+		file.RequestID, file.Filename, file.OriginalFilename,
+		file.Size, file.ContentType, file.MD5Hash, file.SHA256Hash,
+		file.FilePath, file.IsMalicious, file.VirusTotalResult,
+		file.Timestamp)
+
+	return err
+}
+
+// SaveScannerDetection saves a scanner detection
+func SaveScannerDetection(scanner *models.ScannerDetection) error {
+	query := `INSERT INTO scanner_detections
+		(remote_addr, scanner_type, version, request_count, requests_per_second, detected_at, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := db.Exec(query,
+		scanner.RemoteAddr, scanner.ScannerType, scanner.Version,
+		scanner.RequestCount, scanner.RequestsPerSecond,
+		scanner.DetectedAt, scanner.LastSeen)
+
+	return err
+}
+
+// SaveHTTPCredential saves HTTP credential attempt
+func SaveHTTPCredential(cred *models.HTTPCredential) error {
+	query := `INSERT INTO http_credentials
+		(request_id, application, username, password, success, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?)`
+
+	_, err := db.Exec(query,
+		cred.RequestID, cred.Application, cred.Username,
+		cred.Password, cred.Success, cred.Timestamp)
+
+	return err
+}
+
+// GetHTTPRequests retrieves recent HTTP requests
+func GetHTTPRequests(limit int) ([]models.HTTPRequest, error) {
+	query := `SELECT id, remote_addr, method, path, query_string, user_agent, referer,
+		headers, body, timestamp, country, city, response_code
+		FROM http_requests ORDER BY timestamp DESC LIMIT ?`
+
+	rows, err := db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var requests []models.HTTPRequest
+	for rows.Next() {
+		var req models.HTTPRequest
+		err := rows.Scan(&req.ID, &req.RemoteAddr, &req.Method, &req.Path,
+			&req.QueryString, &req.UserAgent, &req.Referer, &req.Headers,
+			&req.Body, &req.Timestamp, &req.Country, &req.City, &req.ResponseCode)
+		if err != nil {
+			return nil, err
+		}
+		requests = append(requests, req)
+	}
+
+	return requests, nil
+}
+
+// GetHTTPAttacks retrieves recent HTTP attacks
+func GetHTTPAttacks(limit int) ([]models.HTTPAttack, error) {
+	query := `SELECT id, request_id, attack_type, severity, payload, matched_pattern, response_strategy, timestamp
+		FROM http_attacks ORDER BY timestamp DESC LIMIT ?`
+
+	rows, err := db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var attacks []models.HTTPAttack
+	for rows.Next() {
+		var attack models.HTTPAttack
+		err := rows.Scan(&attack.ID, &attack.RequestID, &attack.AttackType,
+			&attack.Severity, &attack.Payload, &attack.MatchedPattern,
+			&attack.ResponseStrategy, &attack.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		attacks = append(attacks, attack)
+	}
+
+	return attacks, nil
 }

@@ -74,3 +74,44 @@ alerts:
 geolocation:
   enabled: true
   api_key: ""  # Clé API pour un service de géolocalisation
+
+# Configuration du honeypot HTTP/HTTPS
+http:
+  enabled: true
+  host: "0.0.0.0"
+  port: 80
+  tls:
+    enabled: false
+    port: 443
+    cert_file: "/etc/honeypot/cert.pem"
+    key_file: "/etc/honeypot/key.pem"
+  applications:
+    wordpress:
+      enabled: true
+      path: "/wordpress"
+      version: "5.8.1"  # Appear as outdated/vulnerable version
+      fake_credentials:
+        - username: "admin"
+          password: "admin123"
+        - username: "admin"
+          password: "password"
+    phpmyadmin:
+      enabled: true
+      path: "/phpmyadmin"
+      version: "4.8.1"  # Known vulnerable version
+      fake_credentials:
+        - username: "root"
+          password: "root"
+        - username: "admin"
+          password: "admin"
+    upload:
+      enabled: true
+      paths:
+        - "/upload.php"
+        - "/upload"
+        - "/fileupload"
+      max_file_size: 10485760  # 10MB
+      quarantine_dir: "./uploads"
+      virustotal_api_key: ""
+    admin_panels:
+      enabled: true

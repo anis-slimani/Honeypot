@@ -38,11 +38,19 @@ func (w *WebServer) Start(ctx context.Context) error {
 	// Routes statiques
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(w.config.StaticPath))))
 
-	// Routes API
+	// Routes API - SSH Honeypot
 	mux.HandleFunc("/api/connections", w.handleConnections)
 	mux.HandleFunc("/api/commands", w.handleCommands)
 	mux.HandleFunc("/api/statistics", w.handleStatistics)
 	mux.HandleFunc("/api/alerts", w.handleAlerts)
+
+	// Routes API - HTTP Honeypot
+	mux.HandleFunc("/api/http/requests", w.handleHTTPRequests)
+	mux.HandleFunc("/api/http/attacks", w.handleHTTPAttacks)
+	mux.HandleFunc("/api/http/uploads", w.handleHTTPUploads)
+	mux.HandleFunc("/api/http/credentials", w.handleHTTPCredentials)
+	mux.HandleFunc("/api/http/scanners", w.handleHTTPScanners)
+	mux.HandleFunc("/api/http/statistics", w.handleHTTPStatistics)
 
 	// Route principale
 	mux.HandleFunc("/", w.handleIndex)
@@ -65,6 +73,11 @@ func (w *WebServer) Start(ctx context.Context) error {
 
 // handleIndex gère la page principale
 func (w *WebServer) handleIndex(wr http.ResponseWriter, r *http.Request) {
+	// Try to serve the dashboard template file
+	http.ServeFile(wr, r, w.config.TemplatesPath+"/dashboard.html")
+	return
+
+	// Fallback HTML if template not found
 	html := `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -484,4 +497,221 @@ func (w *WebServer) handleAlerts(wr http.ResponseWriter, r *http.Request) {
 
 	wr.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(wr).Encode(alerts)
+}
+
+// handleHTTPRequests gère les requêtes HTTP honeypot
+func (w *WebServer) handleHTTPRequests(wr http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	requests, err := database.GetHTTPRequests(limit)
+	if err != nil {
+		w.logger.Errorf("Failed to get HTTP requests: %v", err)
+		http.Error(wr, "Failed to get HTTP requests", http.StatusInternalServerError)
+		return
+	}
+
+	wr.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(wr).Encode(requests)
+}
+
+// handleHTTPAttacks gère les attaques HTTP détectées
+func (w *WebServer) handleHTTPAttacks(wr http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	attacks, err := database.GetHTTPAttacks(limit)
+	if err != nil {
+		w.logger.Errorf("Failed to get HTTP attacks: %v", err)
+		http.Error(wr, "Failed to get HTTP attacks", http.StatusInternalServerError)
+		return
+	}
+
+	wr.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(wr).Encode(attacks)
+}
+
+// handleHTTPUploads gère les fichiers uploadés
+func (w *WebServer) handleHTTPUploads(wr http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	query := `SELECT id, request_id, filename, original_filename, size, content_type,
+			  md5_hash, sha256_hash, file_path, is_malicious, virustotal_result, timestamp
+			  FROM uploaded_files ORDER BY timestamp DESC LIMIT ?`
+
+	rows, err := w.db.Query(query, limit)
+	if err != nil {
+		w.logger.Errorf("Failed to query uploaded files: %v", err)
+		http.Error(wr, "Failed to get uploaded files", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var uploads []models.UploadedFile
+	for rows.Next() {
+		var upload models.UploadedFile
+		var vtResult sql.NullString
+		err := rows.Scan(&upload.ID, &upload.RequestID, &upload.Filename, &upload.OriginalFilename,
+			&upload.Size, &upload.ContentType, &upload.MD5Hash, &upload.SHA256Hash,
+			&upload.FilePath, &upload.IsMalicious, &vtResult, &upload.Timestamp)
+		if err != nil {
+			w.logger.Errorf("Failed to scan uploaded file: %v", err)
+			continue
+		}
+		upload.VirusTotalResult = vtResult.String
+		uploads = append(uploads, upload)
+	}
+
+	wr.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(wr).Encode(uploads)
+}
+
+// handleHTTPCredentials gère les credentials capturés
+func (w *WebServer) handleHTTPCredentials(wr http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	query := `SELECT id, request_id, application, username, password, success, timestamp
+			  FROM http_credentials ORDER BY timestamp DESC LIMIT ?`
+
+	rows, err := w.db.Query(query, limit)
+	if err != nil {
+		w.logger.Errorf("Failed to query HTTP credentials: %v", err)
+		http.Error(wr, "Failed to get HTTP credentials", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var credentials []models.HTTPCredential
+	for rows.Next() {
+		var cred models.HTTPCredential
+		err := rows.Scan(&cred.ID, &cred.RequestID, &cred.Application, &cred.Username,
+			&cred.Password, &cred.Success, &cred.Timestamp)
+		if err != nil {
+			w.logger.Errorf("Failed to scan HTTP credential: %v", err)
+			continue
+		}
+		credentials = append(credentials, cred)
+	}
+
+	wr.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(wr).Encode(credentials)
+}
+
+// handleHTTPScanners gère les scanners détectés
+func (w *WebServer) handleHTTPScanners(wr http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 20
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	query := `SELECT id, remote_addr, scanner_type, version, request_count,
+			  requests_per_second, detected_at, last_seen
+			  FROM scanner_detections ORDER BY last_seen DESC LIMIT ?`
+
+	rows, err := w.db.Query(query, limit)
+	if err != nil {
+		w.logger.Errorf("Failed to query scanners: %v", err)
+		http.Error(wr, "Failed to get scanners", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var scanners []models.ScannerDetection
+	for rows.Next() {
+		var scanner models.ScannerDetection
+		var version sql.NullString
+		err := rows.Scan(&scanner.ID, &scanner.RemoteAddr, &scanner.ScannerType, &version,
+			&scanner.RequestCount, &scanner.RequestsPerSecond, &scanner.DetectedAt, &scanner.LastSeen)
+		if err != nil {
+			w.logger.Errorf("Failed to scan scanner: %v", err)
+			continue
+		}
+		scanner.Version = version.String
+		scanners = append(scanners, scanner)
+	}
+
+	wr.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(wr).Encode(scanners)
+}
+
+// handleHTTPStatistics gère les statistiques HTTP
+func (w *WebServer) handleHTTPStatistics(wr http.ResponseWriter, r *http.Request) {
+	stats := models.HTTPStatistics{}
+
+	// Total requests
+	w.db.QueryRow("SELECT COUNT(*) FROM http_requests").Scan(&stats.TotalRequests)
+
+	// Total attacks
+	w.db.QueryRow("SELECT COUNT(*) FROM http_attacks").Scan(&stats.TotalAttacks)
+
+	// Total uploads
+	w.db.QueryRow("SELECT COUNT(*) FROM uploaded_files").Scan(&stats.TotalUploads)
+
+	// Malicious uploads
+	w.db.QueryRow("SELECT COUNT(*) FROM uploaded_files WHERE is_malicious = 1").Scan(&stats.MaliciousUploads)
+
+	// Top attack types
+	rows, err := w.db.Query(`SELECT attack_type, COUNT(*) as count FROM http_attacks
+							 GROUP BY attack_type ORDER BY count DESC LIMIT 10`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var ats models.AttackTypeStats
+			rows.Scan(&ats.AttackType, &ats.Count)
+			stats.TopAttackTypes = append(stats.TopAttackTypes, ats)
+		}
+	}
+
+	// Top paths
+	rows, err = w.db.Query(`SELECT path, COUNT(*) as count FROM http_requests
+							GROUP BY path ORDER BY count DESC LIMIT 10`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var ps models.PathStats
+			rows.Scan(&ps.Path, &ps.Count)
+			stats.TopPaths = append(stats.TopPaths, ps)
+		}
+	}
+
+	// Top user agents
+	rows, err = w.db.Query(`SELECT user_agent, COUNT(*) as count FROM http_requests
+							WHERE user_agent IS NOT NULL AND user_agent != ''
+							GROUP BY user_agent ORDER BY count DESC LIMIT 10`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var uas models.UserAgentStats
+			rows.Scan(&uas.UserAgent, &uas.Count)
+			stats.TopUserAgents = append(stats.TopUserAgents, uas)
+		}
+	}
+
+	wr.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(wr).Encode(stats)
 }

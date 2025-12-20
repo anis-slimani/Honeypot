@@ -13,6 +13,7 @@ import (
 	"honey/internal/database"
 	"honey/internal/honeypot"
 	"honey/internal/logger"
+	httpservice "honey/internal/services/http"
 	"honey/internal/web"
 )
 
@@ -59,6 +60,21 @@ func main() {
 		}
 	}()
 
+	// Start HTTP honeypot if enabled
+	if cfg.HTTP.Enabled {
+		httpServer := httpservice.New(&cfg.HTTP, logger, db)
+		go func() {
+			if err := httpServer.Start(ctx); err != nil {
+				logger.Errorf("HTTP honeypot error: %v", err)
+			}
+		}()
+		if cfg.HTTP.TLS.Enabled {
+			logger.Infof("HTTP honeypot started on %s:%d (HTTPS on port %d)", cfg.HTTP.Host, cfg.HTTP.Port, cfg.HTTP.TLS.Port)
+		} else {
+			logger.Infof("HTTP honeypot started on %s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
+		}
+	}
+
 	// Start web interface if enabled
 	if cfg.Web.Enabled {
 		webServer := web.New(cfg.Web, logger, db)
@@ -71,7 +87,11 @@ func main() {
 	}
 
 	logger.Infof("Honeypot SSH server started on %s:%d", cfg.Server.Host, cfg.Server.Port)
-	logger.Info("Press Ctrl+C to stop the server")
+	if cfg.HTTP.Enabled {
+		logger.Info("Press Ctrl+C to stop all services")
+	} else {
+		logger.Info("Press Ctrl+C to stop the server")
+	}
 
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)

@@ -35,10 +35,10 @@ COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/static ./static
 
 # Créer les dossiers nécessaires
-RUN mkdir -p /root/logs
+RUN mkdir -p /root/logs /root/data /root/uploads
 
 # Exposer les ports
-EXPOSE 2222 8080
+EXPOSE 2222 80 443 8080
 
 # Commande de démarrage
 CMD ["./honeypot", "-config", "config.yaml"]

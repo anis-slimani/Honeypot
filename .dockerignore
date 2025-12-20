@@ -1,27 +1,31 @@
-# Fichiers à ignorer lors du build Docker
+# Ignore build artifacts
 honeypot
-honeypot.db
-*.tar.gz
-*.log
+*.exe
+*.dll
+*.so
+*.dylib
 
-# Dossiers temporaires
+# Ignore logs and data
 logs/
-.git/
+*.log
+honeypot.db
+uploads/
+
+# Ignore development files
+.git
+.gitignore
+README.md
+deploy.sh
+test_attacks.sh
+*.md
+
+# Ignore IDE files
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# Fichiers de développement
-*.md
-CHANGEMENTS.txt
-CORRECTIONS*.txt
-SYSTEME_ALERTES.txt
-ALERTES_RESUME.txt
-check_db.sh
-test_attacks.sh
-deploy.sh
-Makefile
-
-# Fichiers système
+# Ignore OS files
 .DS_Store
 Thumbs.db
-

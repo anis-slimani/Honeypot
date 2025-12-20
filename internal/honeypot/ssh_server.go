@@ -149,7 +149,7 @@ func (s *SSHServer) passwordCallback(conn ssh.ConnMetadata, password []byte) (*s
 		ConnectedAt: time.Now(),
 	}
 
-	if err := database.SaveConnection(connection); err != nil {
+	if _, err := database.SaveConnection(connection); err != nil {
 		s.logger.Errorf("Failed to save connection: %v", err)
 	}
 

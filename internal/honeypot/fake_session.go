@@ -42,10 +42,11 @@ func (s *FakeSession) handle() {
 		ConnectedAt: time.Now(),
 	}
 
-	if err := database.SaveConnection(connection); err != nil {
+	connID, err := database.SaveConnection(connection)
+	if err != nil {
 		s.logger.Errorf("Failed to save successful connection: %v", err)
 	} else {
-		s.connectionID = connection.ID
+		s.connectionID = connID
 	}
 
 	// Traiter les requêtes SSH en arrière-plan
