@@ -20,7 +20,7 @@ auth:
 
 # Configuration du shell factice
 shell:
-  prompt: "user@honeypot:~$ "
+  prompt: "user@Tech.fr:~$ "
   welcome_message: "Welcome to Ubuntu 20.04.3 LTS (GNU/Linux 5.4.0-74-generic x86_64)"
   fake_commands:
     - "ls"
@@ -62,10 +62,11 @@ alerts:
   email:
     smtp_host: "smtp.gmail.com"
     smtp_port: 587
-    username: ""
-    password: ""
-    from: ""
-    to: []
+    username: "honeypotprojet@gmail.com"
+    password: "bivc pvlh schv ifcv"
+    from: "honeypotprojet@gmail.com"
+    to: 
+      - "honeypotprojet@gmail.com"
   thresholds:
     failed_attempts: 5
     time_window: 300  # secondes

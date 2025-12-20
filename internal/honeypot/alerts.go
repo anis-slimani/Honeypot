@@ -9,19 +9,32 @@ import (
 	"honey/internal/database"
 	"honey/internal/logger"
 	"honey/internal/models"
+	"honey/internal/utils"
 )
 
 // AlertManager gère les alertes du honeypot
 type AlertManager struct {
-	config *config.Config
-	logger logger.Logger
+	config      *config.Config
+	logger      logger.Logger
+	emailSender utils.EmailSender
 }
 
 // NewAlertManager crée un nouveau gestionnaire d'alertes
 func NewAlertManager(cfg *config.Config, log logger.Logger) *AlertManager {
+	var emailSender utils.EmailSender
+	
+	// Initialiser l'email sender si les alertes sont activées
+	if cfg.Alerts.Enabled && cfg.Alerts.Email.Username != "" {
+		emailSender = utils.NewEmailSender(cfg.Alerts.Email)
+		log.Infof("📧 Email alerts enabled - sending to: %v", cfg.Alerts.Email.To)
+	} else {
+		log.Warnf("⚠️  Email alerts disabled or not configured")
+	}
+	
 	return &AlertManager{
-		config: cfg,
-		logger: log,
+		config:      cfg,
+		logger:      log,
+		emailSender: emailSender,
 	}
 }
 
@@ -189,19 +202,46 @@ func (am *AlertManager) saveAndLogAlert(alert *models.Alert) {
 		am.logger.Infof("ℹ️  ALERT: %s", logMessage)
 	}
 
-	// Simuler l'envoi d'email (pour l'instant on log juste)
-	am.simulateEmailSend(alert)
+	// Envoyer un vrai email si configuré
+	if am.emailSender != nil {
+		go am.sendRealEmail(alert)
+	} else {
+		// Sinon, simuler l'envoi (pour le développement)
+		am.simulateEmailSend(alert)
+	}
 }
 
-// simulateEmailSend simule l'envoi d'un email
+// sendRealEmail envoie un vrai email via SMTP
+func (am *AlertManager) sendRealEmail(alert *models.Alert) {
+	am.logger.Infof("📧 Sending email alert for: %s", alert.Type)
+	
+	err := am.emailSender.SendAlert(alert)
+	
+	if err != nil {
+		am.logger.Errorf("❌ Failed to send email alert: %v", err)
+		return
+	}
+	
+	am.logger.Infof("✅ Email alert sent successfully to: %v", am.config.Alerts.Email.To)
+	
+	// Marquer comme envoyé dans la base de données
+	now := time.Now()
+	alert.Sent = true
+	alert.SentAt = &now
+	if err := database.UpdateAlert(alert); err != nil {
+		am.logger.Errorf("Failed to update alert status: %v", err)
+	}
+}
+
+// simulateEmailSend simule l'envoi d'un email (pour le développement)
 func (am *AlertManager) simulateEmailSend(alert *models.Alert) {
 	emailContent := fmt.Sprintf(`
 ╔══════════════════════════════════════════════════════════════╗
-║                    📧 EMAIL ENVOYÉ                           ║
+║                📧 EMAIL SIMULÉ (pas configuré)               ║
 ╚══════════════════════════════════════════════════════════════╝
 
 De:        security@honeypot.local
-À:         honeypot@gmail.com
+À:         (non configuré)
 Sujet:     [HONEYPOT ALERT] %s - %s
 
 🚨 ALERTE HONEYPOT 🚨
@@ -222,11 +262,5 @@ Système de surveillance automatique
 		alert.RemoteAddr, alert.CreatedAt.Format("2006-01-02 15:04:05"), alert.Details)
 
 	am.logger.Infof(emailContent)
-	
-	// Marquer comme envoyé
-	now := time.Now()
-	alert.Sent = true
-	alert.SentAt = &now
-	database.UpdateAlert(alert)
 }
 
