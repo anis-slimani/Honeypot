@@ -45,6 +45,7 @@ type Alert struct {
 	ID          int       `json:"id" gorm:"primaryKey"`
 	Type        string    `json:"type"` // "high_risk", "brute_force", "suspicious_activity"
 	Severity    string    `json:"severity"` // "low", "medium", "high", "critical"
+	Service     string    `json:"service"` // "SSH", "HTTP", "FTP", "MALWARE"
 	Message     string    `json:"message"`
 	RemoteAddr  string    `json:"remote_addr"`
 	Details     string    `json:"details,omitempty"`

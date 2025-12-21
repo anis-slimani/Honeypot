@@ -43,6 +43,7 @@ func (am *AlertManager) OnSuccessfulConnection(remoteAddr, username, password st
 	alert := &models.Alert{
 		Type:       "successful_login",
 		Severity:   "medium",
+		Service:    "SSH",
 		Message:    fmt.Sprintf("Connexion réussie détectée depuis %s", remoteAddr),
 		RemoteAddr: remoteAddr,
 		Details:    fmt.Sprintf("Username: %s, Password: %s", username, password),
@@ -71,6 +72,7 @@ func (am *AlertManager) OnFailedConnection(remoteAddr, username, password string
 	alert := &models.Alert{
 		Type:       alertType,
 		Severity:   severity,
+		Service:    "SSH",
 		Message:    message,
 		RemoteAddr: remoteAddr,
 		Details:    fmt.Sprintf("Username: %s, Password: %s, Total attempts: %d", username, password, count),
@@ -84,7 +86,7 @@ func (am *AlertManager) OnFailedConnection(remoteAddr, username, password string
 // OnDangerousCommand déclenche une alerte lors d'une commande dangereuse
 func (am *AlertManager) OnDangerousCommand(remoteAddr, username, command string) {
 	dangerLevel := am.analyzeDangerLevel(command)
-	
+
 	if dangerLevel == "" {
 		return // Pas une commande dangereuse
 	}
@@ -92,6 +94,7 @@ func (am *AlertManager) OnDangerousCommand(remoteAddr, username, command string)
 	alert := &models.Alert{
 		Type:       "dangerous_command",
 		Severity:   dangerLevel,
+		Service:    "SSH",
 		Message:    fmt.Sprintf("⚠️ Commande dangereuse exécutée par %s depuis %s", username, remoteAddr),
 		RemoteAddr: remoteAddr,
 		Details:    fmt.Sprintf("Command: %s", command),
@@ -271,13 +274,14 @@ func (am *AlertManager) SendFTPAlert(alertType, severity, message, remoteAddr, u
 	alert := &models.Alert{
 		Type:       alertType,
 		Severity:   severity,
+		Service:    "FTP",
 		Message:    message,
 		RemoteAddr: remoteAddr,
 		Details:    details,
 		CreatedAt:  time.Now(),
 		Sent:       false,
 	}
-	
+
 	// Sauvegarder et envoyer l'alerte
 	am.saveAndLogAlert(alert)
 }
@@ -287,13 +291,14 @@ func (am *AlertManager) SendHTTPAlert(alertType, severity, message, remoteAddr, 
 	alert := &models.Alert{
 		Type:       alertType,
 		Severity:   severity,
+		Service:    "HTTP",
 		Message:    message,
 		RemoteAddr: remoteAddr,
 		Details:    details,
 		CreatedAt:  time.Now(),
 		Sent:       false,
 	}
-	
+
 	// Sauvegarder et envoyer l'alerte
 	am.saveAndLogAlert(alert)
 }

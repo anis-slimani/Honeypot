@@ -58,13 +58,19 @@ func (s *SMTPEmailSender) buildAlertSubject(alert *models.Alert) string {
 
 	ip := s.formatIP(alert.RemoteAddr)
 
+	// Déterminer le service pour le préfixe
+	servicePrefix := ""
+	if alert.Service != "" {
+		servicePrefix = fmt.Sprintf("[%s] ", alert.Service)
+	}
+
 	// Construire le sujet selon le type d'alerte
 	switch alert.Type {
 	case "successful_login":
-		return fmt.Sprintf("%s HONEYPOT ALERT - Successful Login from %s", icon, ip)
+		return fmt.Sprintf("%s HONEYPOT %sALERT - Successful Login from %s", icon, servicePrefix, ip)
 
 	case "brute_force":
-		return fmt.Sprintf("%s HONEYPOT ALERT - Brute Force Attack from %s", icon, ip)
+		return fmt.Sprintf("%s HONEYPOT %sALERT - Brute Force Attack from %s", icon, servicePrefix, ip)
 
 	case "dangerous_command":
 		// Extraire la commande pour un aperçu court
@@ -80,15 +86,38 @@ func (s *SMTPEmailSender) buildAlertSubject(alert *models.Alert) string {
 			}
 		}
 		if command != "" {
-			return fmt.Sprintf("%s HONEYPOT ALERT - Suspicious Command '%s' from %s", icon, command, ip)
+			return fmt.Sprintf("%s HONEYPOT %sALERT - Suspicious Command '%s' from %s", icon, servicePrefix, command, ip)
 		}
-		return fmt.Sprintf("%s HONEYPOT ALERT - Suspicious Command from %s", icon, ip)
+		return fmt.Sprintf("%s HONEYPOT %sALERT - Suspicious Command from %s", icon, servicePrefix, ip)
 
 	case "failed_login":
-		return fmt.Sprintf("%s HONEYPOT ALERT - Failed Login from %s", icon, ip)
+		return fmt.Sprintf("%s HONEYPOT %sALERT - Failed Login from %s", icon, servicePrefix, ip)
+
+	// Types d'alertes HTTP
+	case "sql_injection":
+		return fmt.Sprintf("%s HONEYPOT %sALERT - SQL Injection Attempt from %s", icon, servicePrefix, ip)
+
+	case "xss_attack":
+		return fmt.Sprintf("%s HONEYPOT %sALERT - XSS Attack from %s", icon, servicePrefix, ip)
+
+	case "path_traversal":
+		return fmt.Sprintf("%s HONEYPOT %sALERT - Path Traversal Attack from %s", icon, servicePrefix, ip)
+
+	case "scanner_detected":
+		return fmt.Sprintf("%s HONEYPOT %sALERT - Security Scanner Detected from %s", icon, servicePrefix, ip)
+
+	case "malware_upload":
+		return fmt.Sprintf("%s HONEYPOT %sALERT - Malware Upload Attempt from %s", icon, servicePrefix, ip)
+
+	// Types d'alertes FTP
+	case "ftp_brute_force":
+		return fmt.Sprintf("%s HONEYPOT %sALERT - FTP Brute Force from %s", icon, servicePrefix, ip)
+
+	case "suspicious_ftp_activity":
+		return fmt.Sprintf("%s HONEYPOT %sALERT - Suspicious FTP Activity from %s", icon, servicePrefix, ip)
 
 	default:
-		return fmt.Sprintf("%s HONEYPOT ALERT - %s from %s", icon, strings.ToUpper(alert.Severity), ip)
+		return fmt.Sprintf("%s HONEYPOT %sALERT - %s from %s", icon, servicePrefix, strings.ToUpper(alert.Severity), ip)
 	}
 }
 
@@ -188,12 +217,27 @@ func (s *SMTPEmailSender) getSeverityEmoji(severity string) string {
 // formatAlertType formate le type d'alerte de manière lisible
 func (s *SMTPEmailSender) formatAlertType(alertType string) string {
 	types := map[string]string{
+		// Alertes SSH
 		"successful_login":  "Connexion réussie",
 		"failed_login":      "Tentative de connexion échouée",
 		"brute_force":       "Attaque par force brute",
 		"dangerous_command": "Commande dangereuse exécutée",
+
+		// Alertes HTTP
+		"sql_injection":     "Tentative d'injection SQL",
+		"xss_attack":        "Attaque XSS",
+		"path_traversal":    "Attaque Path Traversal",
+		"scanner_detected":  "Scanner de sécurité détecté",
+		"malware_upload":    "Tentative d'upload de malware",
+		"wordpress_attack":  "Attaque WordPress",
+		"phpmyadmin_attack": "Attaque PHPMyAdmin",
+
+		// Alertes FTP
+		"ftp_brute_force":         "Attaque brute force FTP",
+		"suspicious_ftp_activity": "Activité FTP suspecte",
+		"ftp_upload":              "Upload FTP suspect",
 	}
-	
+
 	if formatted, ok := types[alertType]; ok {
 		return formatted
 	}
@@ -290,6 +334,65 @@ func (s *SMTPEmailSender) buildThreatAnalysis(alert *models.Alert, details map[s
 	case "failed_login":
 		body.WriteString("Status: FAILED AUTHENTICATION\n")
 		body.WriteString("Invalid credentials used - possible reconnaissance.\n\n")
+
+	// Alertes HTTP
+	case "sql_injection":
+		body.WriteString("Status: SQL INJECTION DETECTED\n")
+		body.WriteString("Threat Type: Database Attack\n")
+		body.WriteString("An attacker attempted to inject malicious SQL code.\n")
+		body.WriteString("Target: Web application database layer\n\n")
+
+	case "xss_attack":
+		body.WriteString("Status: XSS ATTACK DETECTED\n")
+		body.WriteString("Threat Type: Cross-Site Scripting\n")
+		body.WriteString("Malicious script injection attempt detected.\n")
+		body.WriteString("Could be used for session hijacking or data theft.\n\n")
+
+	case "path_traversal":
+		body.WriteString("Status: PATH TRAVERSAL ATTACK\n")
+		body.WriteString("Threat Type: Directory Traversal\n")
+		body.WriteString("Attacker attempting to access unauthorized files.\n")
+		body.WriteString("Target: System files and sensitive data\n\n")
+
+	case "scanner_detected":
+		body.WriteString("Status: SECURITY SCANNER DETECTED\n")
+		body.WriteString("Threat Type: Reconnaissance / Information Gathering\n")
+		body.WriteString("Automated scanning tool detected (Nikto, SQLMap, etc.)\n")
+		body.WriteString("This typically precedes a targeted attack.\n\n")
+
+	case "malware_upload":
+		body.WriteString("Status: MALWARE UPLOAD ATTEMPT\n")
+		body.WriteString("Threat Type: Web Shell / Backdoor\n")
+		body.WriteString("Malicious file upload detected.\n")
+		body.WriteString("File quarantined for analysis.\n\n")
+
+	case "wordpress_attack":
+		body.WriteString("Status: WORDPRESS ATTACK\n")
+		body.WriteString("Threat Type: CMS Exploitation\n")
+		body.WriteString("Attack targeting WordPress vulnerabilities.\n\n")
+
+	case "phpmyadmin_attack":
+		body.WriteString("Status: PHPMYADMIN ATTACK\n")
+		body.WriteString("Threat Type: Database Management Tool Exploitation\n")
+		body.WriteString("Attempt to compromise database administration interface.\n\n")
+
+	// Alertes FTP
+	case "ftp_brute_force":
+		body.WriteString("Status: FTP BRUTE FORCE ATTACK\n")
+		body.WriteString("Threat Type: Password Guessing\n")
+		body.WriteString("Multiple failed FTP authentication attempts detected.\n")
+		body.WriteString("Attacker systematically testing credentials.\n\n")
+
+	case "suspicious_ftp_activity":
+		body.WriteString("Status: SUSPICIOUS FTP ACTIVITY\n")
+		body.WriteString("Threat Type: Unusual FTP Behavior\n")
+		body.WriteString("Anomalous FTP commands or patterns detected.\n\n")
+
+	case "ftp_upload":
+		body.WriteString("Status: SUSPICIOUS FTP UPLOAD\n")
+		body.WriteString("Threat Type: Malicious File Transfer\n")
+		body.WriteString("Potentially malicious file uploaded via FTP.\n")
+		body.WriteString("File captured for analysis.\n\n")
 	}
 
 	return body.String()

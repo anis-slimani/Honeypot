@@ -14,7 +14,7 @@ import (
 	"honey/internal/models"
 )
 
-// FakeSession représente une session SSH factice
+// FakeSession représente une session SSH factice avec émulation de terminal
 type FakeSession struct {
 	channel      ssh.Channel
 	requests     <-chan *ssh.Request
@@ -23,15 +23,15 @@ type FakeSession struct {
 	username     string
 	remoteAddr   string
 	connectionID int
-	currentDir   string // Répertoire courant simulé
+	currentDir   string // Répertoire courant simulé pour la navigation
 	alertManager *AlertManager
 }
 
-// handle gère une session SSH factice
+// handle gère le cycle de vie complet d'une session SSH factice
 func (s *FakeSession) handle() {
 	defer s.channel.Close()
 
-	// Initialiser le répertoire courant
+	// Initialisation du répertoire par défaut
 	s.currentDir = "/home/user"
 
 	// Enregistrer la connexion réussie
@@ -472,17 +472,72 @@ func (s *FakeSession) executeFakeCommand(command string) string {
 	}
 }
 
-// fakeLs simule la commande ls
+// fakeLs simule la commande ls avec support des options -l et -a
 func (s *FakeSession) fakeLs(args []string) string {
-	// Afficher le contenu en fonction du répertoire courant
+	// Détection des options utilisées
+	longFormat := false
+	showAll := false
+
+	for _, arg := range args {
+		if arg == "-l" || arg == "-la" || arg == "-al" {
+			longFormat = true
+		}
+		if arg == "-a" || arg == "-la" || arg == "-al" {
+			showAll = true
+		}
+	}
+
+	// Format simple par défaut (sans -l)
+	if !longFormat {
+		switch s.currentDir {
+		case "/home/user":
+			if showAll {
+				return ".  ..  .bash_logout  .bashrc  .profile  Documents  Downloads  Pictures  secret.txt  script.sh\n"
+			}
+			return "Documents  Downloads  Pictures  secret.txt  script.sh\n"
+		case "/home/user/Documents":
+			if showAll {
+				return ".  ..  notes.txt  report.pdf\n"
+			}
+			return "notes.txt  report.pdf\n"
+		case "/home/user/Downloads":
+			if showAll {
+				return ".  ..  file.zip\n"
+			}
+			return "file.zip\n"
+		case "/home/user/Pictures":
+			if showAll {
+				return ".  ..  photo.jpg\n"
+			}
+			return "photo.jpg\n"
+		case "/":
+			return "bin  boot  dev  etc  home  lib  media  mnt  opt  root  run  sbin  tmp  usr  var\n"
+		case "/etc":
+			if showAll {
+				return ".  ..  hosts  hostname  passwd\n"
+			}
+			return "hosts  hostname  passwd\n"
+		case "/tmp":
+			if showAll {
+				return ".  ..\n"
+			}
+			return "\n"
+		default:
+			return "\n"
+		}
+	}
+
+	// Format détaillé (avec -l)
 	switch s.currentDir {
 	case "/home/user":
 		output := "total 48\n"
-		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
-		output += "drwxr-xr-x  3 root root 4096 Jan 15 10:30 ..\n"
-		output += "-rw-r--r--  1 user user  220 Jan 15 10:30 .bash_logout\n"
-		output += "-rw-r--r--  1 user user 3771 Jan 15 10:30 .bashrc\n"
-		output += "-rw-r--r--  1 user user  807 Jan 15 10:30 .profile\n"
+		if showAll {
+			output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
+			output += "drwxr-xr-x  3 root root 4096 Jan 15 10:30 ..\n"
+			output += "-rw-r--r--  1 user user  220 Jan 15 10:30 .bash_logout\n"
+			output += "-rw-r--r--  1 user user 3771 Jan 15 10:30 .bashrc\n"
+			output += "-rw-r--r--  1 user user  807 Jan 15 10:30 .profile\n"
+		}
 		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 Documents\n"
 		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 Downloads\n"
 		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 Pictures\n"
@@ -491,21 +546,27 @@ func (s *FakeSession) fakeLs(args []string) string {
 		return output
 	case "/home/user/Documents":
 		output := "total 16\n"
-		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
-		output += "drwxr-xr-x  5 user user 4096 Jan 15 10:30 ..\n"
+		if showAll {
+			output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
+			output += "drwxr-xr-x  5 user user 4096 Jan 15 10:30 ..\n"
+		}
 		output += "-rw-r--r--  1 user user 2048 Jan 15 10:30 notes.txt\n"
 		output += "-rw-r--r--  1 user user 4096 Jan 15 10:30 report.pdf\n"
 		return output
 	case "/home/user/Downloads":
 		output := "total 12\n"
-		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
-		output += "drwxr-xr-x  5 user user 4096 Jan 15 10:30 ..\n"
+		if showAll {
+			output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
+			output += "drwxr-xr-x  5 user user 4096 Jan 15 10:30 ..\n"
+		}
 		output += "-rw-r--r--  1 user user 1024 Jan 15 10:30 file.zip\n"
 		return output
 	case "/home/user/Pictures":
 		output := "total 8\n"
-		output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
-		output += "drwxr-xr-x  5 user user 4096 Jan 15 10:30 ..\n"
+		if showAll {
+			output += "drwxr-xr-x  2 user user 4096 Jan 15 10:30 .\n"
+			output += "drwxr-xr-x  5 user user 4096 Jan 15 10:30 ..\n"
+		}
 		output += "-rw-r--r--  1 user user 2048 Jan 15 10:30 photo.jpg\n"
 		return output
 	case "/":
@@ -530,16 +591,20 @@ func (s *FakeSession) fakeLs(args []string) string {
 		return output
 	case "/etc":
 		output := "total 20\n"
-		output += "drwxr-xr-x  2 root root 4096 Jan 15 10:30 .\n"
-		output += "drwxr-xr-x 17 root root 4096 Jan 15 10:30 ..\n"
+		if showAll {
+			output += "drwxr-xr-x  2 root root 4096 Jan 15 10:30 .\n"
+			output += "drwxr-xr-x 17 root root 4096 Jan 15 10:30 ..\n"
+		}
 		output += "-rw-r--r--  1 root root  220 Jan 15 10:30 passwd\n"
 		output += "-rw-r--r--  1 root root  100 Jan 15 10:30 hosts\n"
 		output += "-rw-r--r--  1 root root  150 Jan 15 10:30 hostname\n"
 		return output
 	case "/tmp":
 		output := "total 4\n"
-		output += "drwxrwxrwt  2 root root 4096 Jan 15 10:30 .\n"
-		output += "drwxr-xr-x 17 root root 4096 Jan 15 10:30 ..\n"
+		if showAll {
+			output += "drwxrwxrwt  2 root root 4096 Jan 15 10:30 .\n"
+			output += "drwxr-xr-x 17 root root 4096 Jan 15 10:30 ..\n"
+		}
 		return output
 	default:
 		return "total 0\n"
@@ -757,12 +822,22 @@ func (s *FakeSession) fakeFind(args []string) string {
 
 // fakeWget simule la commande wget
 func (s *FakeSession) fakeWget(args []string) string {
-	return "wget: command not found (simulated)\n"
+	if len(args) == 0 {
+		return "wget: missing URL\nUsage: wget [OPTION]... [URL]...\n"
+	}
+
+	url := args[len(args)-1]
+	return "--" + time.Now().Format("2006-01-02 15:04:05") + "--  " + url + "\nResolving " + url + "... failed: Name or service not known.\nwget: unable to resolve host address '" + url + "'\n"
 }
 
 // fakeCurl simule la commande curl
 func (s *FakeSession) fakeCurl(args []string) string {
-	return "curl: command not found (simulated)\n"
+	if len(args) == 0 {
+		return "curl: try 'curl --help' or 'curl --manual' for more information\n"
+	}
+
+	url := args[len(args)-1]
+	return "curl: (6) Could not resolve host: " + url + "\n"
 }
 
 // fakeUname simule la commande uname

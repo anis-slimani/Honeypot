@@ -19,17 +19,17 @@ import (
 )
 
 func main() {
-	// Analyser les arguments de ligne de commande
+	// Analyse des arguments de ligne de commande
 	configPath := flag.String("config", "config.yaml", "Chemin vers le fichier de configuration")
 	flag.Parse()
 
-	// Charger la configuration
+	// Chargement de la configuration YAML
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		log.Fatalf("Échec du chargement de la configuration: %v", err)
 	}
 
-	// Initialiser le logger
+	// Initialisation du système de logging
 	logger, err := logger.New(cfg.Logging)
 	if err != nil {
 		log.Fatalf("Échec de l'initialisation du logger: %v", err)
@@ -38,7 +38,7 @@ func main() {
 
 	logger.Info("Démarrage du Honey SSH Honeypot...")
 
-	// Initialiser la base de données
+	// Initialisation de la base de données SQLite
 	db, err := database.Initialize(cfg.Database)
 	if err != nil {
 		logger.Fatalf("Échec de l'initialisation de la base de données: %v", err)
@@ -47,24 +47,24 @@ func main() {
 
 	logger.Info("Base de données initialisée avec succès")
 
-	// Créer un contexte pour l'arrêt gracieux
+	// Création du contexte pour l'arrêt gracieux des services
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Créer l'AlertManager global
+	// Initialisation du gestionnaire d'alertes email
 	alertManager := honeypot.NewAlertManager(cfg, logger)
 
-	// Initialiser le honeypot SSH
+	// Initialisation du serveur SSH honeypot
 	honeypotServer := honeypot.New(cfg, logger, db)
 
-	// Démarrer le serveur honeypot SSH
+	// Démarrage du serveur SSH en arrière-plan
 	go func() {
 		if err := honeypotServer.Start(ctx); err != nil {
 			logger.Errorf("Erreur du serveur honeypot: %v", err)
 		}
 	}()
 
-	// Démarrer le honeypot HTTP si activé
+	// Démarrage du honeypot HTTP si activé
 	if cfg.HTTP.Enabled {
 		httpServer := httpservice.New(&cfg.HTTP, logger, db)
 		httpServer.SetAlertManager(alertManager)
@@ -80,7 +80,7 @@ func main() {
 		}
 	}
 
-	// Démarrer le honeypot FTP si activé
+	// Démarrage du honeypot FTP si activé
 	if cfg.FTP.Enabled {
 		ftpServer := ftpservice.New(&cfg.FTP, logger, db)
 		ftpServer.SetAlertManager(alertManager)
@@ -92,7 +92,7 @@ func main() {
 		logger.Infof("Honeypot FTP démarré sur %s:%d", cfg.FTP.Host, cfg.FTP.Port)
 	}
 
-	// Démarrer l'interface web si activée
+	// Démarrage de l'interface web pour la visualisation
 	if cfg.Web.Enabled {
 		webServer := web.New(cfg.Web, logger, db)
 		go func() {

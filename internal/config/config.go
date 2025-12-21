@@ -178,7 +178,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Validation et valeurs par défaut
+	// Validation et application des valeurs par défaut
 	if err := config.validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
@@ -186,9 +186,9 @@ func Load(path string) (*Config, error) {
 	return &config, nil
 }
 
-// validate valide la configuration et applique les valeurs par défaut
+// validate vérifie la configuration et applique les valeurs par défaut
 func (c *Config) validate() error {
-	// Valeurs par défaut pour le serveur
+	// Configuration par défaut du serveur SSH
 	if c.Server.Host == "" {
 		c.Server.Host = "0.0.0.0"
 	}
