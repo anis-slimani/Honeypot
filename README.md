@@ -143,9 +143,9 @@ ftp:
 auth:
   fake_users:
     - username: "admin"
-      password: "admin123"
+      password: "*****"
     - username: "root"
-      password: "password"
+      password: "****"
       
 # Shell factice
 shell:
@@ -208,7 +208,7 @@ Le projet inclut un outil de test complet (`./tester`) qui simule des attaques r
 ```bash
 # Connexion SSH
 ssh -p 2222 admin@localhost
-# Password: admin123
+# Password: ****
 
 # Commandes à tester
 whoami
@@ -240,7 +240,7 @@ curl -X POST http://localhost:80/wp-login.php -d "log=admin&pwd=admin"
 # Connexion FTP avec netcat
 nc localhost 2121
 USER admin
-PASS admin123
+PASS ***
 PWD
 LIST
 STOR malware.sh
@@ -434,24 +434,7 @@ Ce honeypot est destiné à des **fins éducatives et de recherche en sécurité
 - ❌ N'utilisez pas pour des activités illégales
 - ❌ Les auteurs ne sont pas responsables de l'utilisation abusive
 
-## 🤝 Contribution
-
-Les contributions sont les bienvenues !
-
-1. Fork le projet
-2. Créer une branche (`git checkout -b feature/AmazingFeature`)
-3. Commit (`git commit -m 'Add AmazingFeature'`)
-4. Push (`git push origin feature/AmazingFeature`)
-5. Ouvrir une Pull Request
-
-## 📞 Support
-
-- 📖 Consultez la documentation
-- 🐛 Créez une issue sur GitHub
-- 💬 Contactez les mainteneurs
-
 ---
 
-**Développé avec ❤️ en Go pour la cybersécurité**
 
-*Honeypot V6 - Multi-Protocol Security Research Platform*
+*Honeypot V7 - Multi-Protocol Security Research Platform*
