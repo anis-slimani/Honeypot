@@ -808,25 +808,28 @@ func testFTPAnonymousLogin(host, port string) {
 	defer conn.Close()
 	
 	// Read banner
-	buffer := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	conn.Read(buffer)
+	buffer := make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	n, _ := conn.Read(buffer)
+	banner := string(buffer[:n])
 	
 	// Send USER anonymous
 	conn.Write([]byte("USER anonymous\r\n"))
-	time.Sleep(300 * time.Millisecond)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	n, _ := conn.Read(buffer)
+	time.Sleep(500 * time.Millisecond)
+	buffer = make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	n, _ = conn.Read(buffer)
 	response1 := string(buffer[:n])
 	
 	// Send PASS (empty)
 	conn.Write([]byte("PASS \r\n"))
-	time.Sleep(300 * time.Millisecond)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	time.Sleep(500 * time.Millisecond)
+	buffer = make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	n, _ = conn.Read(buffer)
 	response2 := string(buffer[:n])
 	
-	printTest("Anonymous FTP login", true, fmt.Sprintf("Response: %s", strings.TrimSpace(response2)))
+	printTest("Anonymous FTP login", true, fmt.Sprintf("Banner: %s | Response: %s", strings.TrimSpace(banner), strings.TrimSpace(response2)))
 	
 	conn.Write([]byte("QUIT\r\n"))
 	time.Sleep(100 * time.Millisecond)
@@ -853,20 +856,22 @@ func testFTPBruteForce(host, port string) {
 			continue
 		}
 		
-		buffer := make([]byte, 1024)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		buffer := make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		conn.Read(buffer) // Read banner
 		
 		// Send USER
 		conn.Write([]byte("USER admin\r\n"))
-		time.Sleep(200 * time.Millisecond)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		time.Sleep(400 * time.Millisecond)
+		buffer = make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		conn.Read(buffer)
 		
 		// Send PASS
 		conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", pass)))
-		time.Sleep(200 * time.Millisecond)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		time.Sleep(400 * time.Millisecond)
+		buffer = make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, _ := conn.Read(buffer)
 		response := string(buffer[:n])
 		
@@ -891,20 +896,22 @@ func testFTPValidLogin(host, port, username, password string) {
 	}
 	defer conn.Close()
 	
-	buffer := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	buffer := make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	conn.Read(buffer) // Read banner
 	
 	// Send USER
 	conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
-	time.Sleep(300 * time.Millisecond)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	time.Sleep(500 * time.Millisecond)
+	buffer = make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	conn.Read(buffer)
 	
 	// Send PASS
 	conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
-	time.Sleep(300 * time.Millisecond)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	time.Sleep(500 * time.Millisecond)
+	buffer = make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	n, _ := conn.Read(buffer)
 	response := string(buffer[:n])
 	
@@ -915,8 +922,9 @@ func testFTPValidLogin(host, port, username, password string) {
 	
 	for _, cmd := range commands {
 		conn.Write([]byte(cmd + "\r\n"))
-		time.Sleep(300 * time.Millisecond)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		time.Sleep(500 * time.Millisecond)
+		buffer = make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, _ := conn.Read(buffer)
 		resp := string(buffer[:n])
 		printTest(fmt.Sprintf("Command: %s", cmd), true, strings.TrimSpace(resp))
@@ -949,25 +957,28 @@ func testFTPMaliciousUploads(host, port, username, password string) {
 			continue
 		}
 		
-		buffer := make([]byte, 1024)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		buffer := make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		conn.Read(buffer) // Banner
 		
 		// Login
 		conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
-		time.Sleep(200 * time.Millisecond)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		time.Sleep(400 * time.Millisecond)
+		buffer = make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		conn.Read(buffer)
 		
 		conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
-		time.Sleep(200 * time.Millisecond)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		time.Sleep(400 * time.Millisecond)
+		buffer = make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		conn.Read(buffer)
 		
 		// Try to upload malicious file
 		conn.Write([]byte(fmt.Sprintf("STOR %s\r\n", filename)))
-		time.Sleep(300 * time.Millisecond)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		time.Sleep(500 * time.Millisecond)
+		buffer = make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, _ := conn.Read(buffer)
 		response := string(buffer[:n])
 		
@@ -1003,26 +1014,29 @@ func testFTPDirectoryTraversal(host, port, username, password string) {
 	}
 	defer conn.Close()
 	
-	buffer := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	buffer := make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	conn.Read(buffer) // Banner
 	
 	// Login
 	conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
-	time.Sleep(200 * time.Millisecond)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	time.Sleep(400 * time.Millisecond)
+	buffer = make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	conn.Read(buffer)
 	
 	conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
-	time.Sleep(200 * time.Millisecond)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	time.Sleep(400 * time.Millisecond)
+	buffer = make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	conn.Read(buffer)
 	
 	// Try directory traversal
 	for _, path := range traversalPaths {
 		conn.Write([]byte(fmt.Sprintf("CWD %s\r\n", path)))
-		time.Sleep(300 * time.Millisecond)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		time.Sleep(500 * time.Millisecond)
+		buffer = make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, _ := conn.Read(buffer)
 		response := string(buffer[:n])
 		
@@ -1030,8 +1044,9 @@ func testFTPDirectoryTraversal(host, port, username, password string) {
 		
 		// Try to retrieve file
 		conn.Write([]byte(fmt.Sprintf("RETR %s\r\n", path)))
-		time.Sleep(300 * time.Millisecond)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		time.Sleep(500 * time.Millisecond)
+		buffer = make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, _ = conn.Read(buffer)
 		response = string(buffer[:n])
 		
@@ -1062,26 +1077,29 @@ func testFTPCommandInjection(host, port, username, password string) {
 	}
 	defer conn.Close()
 	
-	buffer := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	buffer := make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	conn.Read(buffer) // Banner
 	
 	// Login
 	conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
-	time.Sleep(200 * time.Millisecond)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	time.Sleep(400 * time.Millisecond)
+	buffer = make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	conn.Read(buffer)
 	
 	conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
-	time.Sleep(200 * time.Millisecond)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	time.Sleep(400 * time.Millisecond)
+	buffer = make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	conn.Read(buffer)
 	
 	// Try command injection
 	for _, payload := range injectionPayloads {
 		conn.Write([]byte(payload + "\r\n"))
-		time.Sleep(300 * time.Millisecond)
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		time.Sleep(500 * time.Millisecond)
+		buffer = make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, _ := conn.Read(buffer)
 		response := string(buffer[:n])
 		
