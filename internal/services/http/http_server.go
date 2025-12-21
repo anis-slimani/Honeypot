@@ -28,6 +28,12 @@ type HTTPHoneypot struct {
 	router        *Router
 	mu            sync.RWMutex
 	requestCounts map[string]*RequestCount
+	alertManager  AlertManager
+}
+
+// AlertManager interface pour envoyer des alertes
+type AlertManager interface {
+	SendHTTPAlert(alertType, severity, message, remoteAddr, details string)
 }
 
 // RequestCount suit les requêtes par IP pour la détection de scanners
@@ -60,6 +66,15 @@ func New(cfg *config.HTTPConfig, log logger.Logger, db *sql.DB) *HTTPHoneypot {
 	}
 
 	return hp
+}
+
+// SetAlertManager définit le gestionnaire d'alertes
+func (h *HTTPHoneypot) SetAlertManager(am AlertManager) {
+	h.alertManager = am
+	// Passer l'AlertManager au router
+	if h.router != nil {
+		h.router.SetAlertManager(am)
+	}
 }
 
 // Start démarre le serveur honeypot HTTP

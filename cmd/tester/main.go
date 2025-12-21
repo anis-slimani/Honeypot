@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,13 +28,18 @@ const (
 )
 
 type TestConfig struct {
-	SSHHost     string
-	SSHPort     string
-	SSHUser     string
-	SSHPass     string
-	HTTPURL     string
-	SSHOnly     bool
-	HTTPOnly    bool
+	SSHHost      string
+	SSHPort      string
+	SSHUser      string
+	SSHPass      string
+	HTTPURL      string
+	FTPHost      string
+	FTPPort      string
+	FTPUser      string
+	FTPPass      string
+	SSHOnly      bool
+	HTTPOnly     bool
+	FTPOnly      bool
 	NoBruteForce bool
 }
 
@@ -45,8 +51,13 @@ func main() {
 	flag.StringVar(&config.SSHUser, "ssh-user", "admin", "Valid SSH username")
 	flag.StringVar(&config.SSHPass, "ssh-pass", "admin123", "Valid SSH password")
 	flag.StringVar(&config.HTTPURL, "http-url", "http://localhost:8080", "HTTP honeypot URL")
+	flag.StringVar(&config.FTPHost, "ftp-host", "localhost", "FTP honeypot host")
+	flag.StringVar(&config.FTPPort, "ftp-port", "2121", "FTP honeypot port")
+	flag.StringVar(&config.FTPUser, "ftp-user", "admin", "Valid FTP username")
+	flag.StringVar(&config.FTPPass, "ftp-pass", "admin123", "Valid FTP password")
 	flag.BoolVar(&config.SSHOnly, "ssh-only", false, "Test only SSH attacks")
 	flag.BoolVar(&config.HTTPOnly, "http-only", false, "Test only HTTP attacks")
+	flag.BoolVar(&config.FTPOnly, "ftp-only", false, "Test only FTP attacks")
 	flag.BoolVar(&config.NoBruteForce, "no-bruteforce", false, "Skip brute force tests")
 
 	flag.Parse()
@@ -54,10 +65,12 @@ func main() {
 	printBanner()
 	fmt.Printf("SSH Target: %s:%s\n", config.SSHHost, config.SSHPort)
 	fmt.Printf("HTTP Target: %s\n", config.HTTPURL)
-	fmt.Printf("Valid SSH Credentials: %s/%s\n\n", config.SSHUser, config.SSHPass)
+	fmt.Printf("FTP Target: %s:%s\n", config.FTPHost, config.FTPPort)
+	fmt.Printf("Valid SSH Credentials: %s/%s\n", config.SSHUser, config.SSHPass)
+	fmt.Printf("Valid FTP Credentials: %s/%s\n\n", config.FTPUser, config.FTPPass)
 
 	// SSH Tests
-	if !config.HTTPOnly {
+	if !config.HTTPOnly && !config.FTPOnly {
 		testSSHProtocol(config.SSHHost, config.SSHPort)
 
 		if !config.NoBruteForce {
@@ -70,7 +83,7 @@ func main() {
 	}
 
 	// HTTP Tests
-	if !config.SSHOnly {
+	if !config.SSHOnly && !config.FTPOnly {
 		testHTTPSQLInjection(config.HTTPURL)
 		testHTTPXSS(config.HTTPURL)
 		testHTTPCommandInjection(config.HTTPURL)
@@ -80,6 +93,21 @@ func main() {
 		testHTTPPhpMyAdmin(config.HTTPURL)
 		testHTTPCommonExploits(config.HTTPURL)
 		testHTTPScannerDetection(config.HTTPURL)
+	}
+
+	// FTP Tests
+	if !config.SSHOnly && !config.HTTPOnly {
+		testFTPConnection(config.FTPHost, config.FTPPort)
+		testFTPAnonymousLogin(config.FTPHost, config.FTPPort)
+		
+		if !config.NoBruteForce {
+			testFTPBruteForce(config.FTPHost, config.FTPPort)
+		}
+		
+		testFTPValidLogin(config.FTPHost, config.FTPPort, config.FTPUser, config.FTPPass)
+		testFTPMaliciousUploads(config.FTPHost, config.FTPPort, config.FTPUser, config.FTPPass)
+		testFTPDirectoryTraversal(config.FTPHost, config.FTPPort, config.FTPUser, config.FTPPass)
+		testFTPCommandInjection(config.FTPHost, config.FTPPort, config.FTPUser, config.FTPPass)
 	}
 
 	printSection("TESTING COMPLETE")
@@ -735,6 +763,306 @@ func testHTTPScannerDetection(baseURL string) {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
+}
+
+// ============================================================================
+// FTP ATTACK TESTS
+// ============================================================================
+
+func testFTPConnection(host, port string) {
+	printSection("FTP CONNECTION TEST")
+	
+	addr := fmt.Sprintf("%s:%s", host, port)
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	
+	if err != nil {
+		printTest("FTP server connection", false, err.Error())
+		return
+	}
+	defer conn.Close()
+	
+	// Read banner
+	buffer := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	n, err := conn.Read(buffer)
+	
+	if err != nil {
+		printTest("FTP banner read", false, err.Error())
+		return
+	}
+	
+	banner := string(buffer[:n])
+	printTest("FTP server connection", true, fmt.Sprintf("Banner: %s", strings.TrimSpace(banner)))
+}
+
+func testFTPAnonymousLogin(host, port string) {
+	printSection("FTP ANONYMOUS LOGIN ATTEMPT")
+	
+	addr := fmt.Sprintf("%s:%s", host, port)
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	
+	if err != nil {
+		printTest("Anonymous login", false, err.Error())
+		return
+	}
+	defer conn.Close()
+	
+	// Read banner
+	buffer := make([]byte, 1024)
+	conn.Read(buffer)
+	
+	// Send USER anonymous
+	conn.Write([]byte("USER anonymous\r\n"))
+	time.Sleep(200 * time.Millisecond)
+	n, _ := conn.Read(buffer)
+	response1 := string(buffer[:n])
+	
+	// Send PASS (empty)
+	conn.Write([]byte("PASS \r\n"))
+	time.Sleep(200 * time.Millisecond)
+	n, _ = conn.Read(buffer)
+	response2 := string(buffer[:n])
+	
+	printTest("Anonymous FTP login", true, fmt.Sprintf("Response: %s", strings.TrimSpace(response2)))
+	
+	conn.Write([]byte("QUIT\r\n"))
+}
+
+func testFTPBruteForce(host, port string) {
+	printSection("FTP BRUTE FORCE SIMULATION")
+	
+	passwords := []string{
+		"password",
+		"123456",
+		"admin",
+		"root",
+		"test123",
+		"password123",
+	}
+	
+	for _, pass := range passwords {
+		addr := fmt.Sprintf("%s:%s", host, port)
+		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		
+		if err != nil {
+			printTest(fmt.Sprintf("Brute force attempt: %s", pass), false, err.Error())
+			continue
+		}
+		
+		buffer := make([]byte, 1024)
+		conn.Read(buffer) // Read banner
+		
+		// Send USER
+		conn.Write([]byte("USER admin\r\n"))
+		time.Sleep(100 * time.Millisecond)
+		conn.Read(buffer)
+		
+		// Send PASS
+		conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", pass)))
+		time.Sleep(100 * time.Millisecond)
+		n, _ := conn.Read(buffer)
+		response := string(buffer[:n])
+		
+		printTest(fmt.Sprintf("Password attempt: %s", pass), true, strings.TrimSpace(response))
+		
+		conn.Write([]byte("QUIT\r\n"))
+		conn.Close()
+		
+		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+func testFTPValidLogin(host, port, username, password string) {
+	printSection("FTP VALID LOGIN TEST")
+	
+	addr := fmt.Sprintf("%s:%s", host, port)
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	
+	if err != nil {
+		printTest("Valid FTP login", false, err.Error())
+		return
+	}
+	defer conn.Close()
+	
+	buffer := make([]byte, 1024)
+	conn.Read(buffer) // Read banner
+	
+	// Send USER
+	conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
+	time.Sleep(200 * time.Millisecond)
+	conn.Read(buffer)
+	
+	// Send PASS
+	conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
+	time.Sleep(200 * time.Millisecond)
+	n, _ := conn.Read(buffer)
+	response := string(buffer[:n])
+	
+	printTest(fmt.Sprintf("Login with %s/%s", username, password), true, strings.TrimSpace(response))
+	
+	// Test some basic commands
+	commands := []string{"SYST", "PWD", "LIST", "FEAT"}
+	
+	for _, cmd := range commands {
+		conn.Write([]byte(cmd + "\r\n"))
+		time.Sleep(200 * time.Millisecond)
+		n, _ := conn.Read(buffer)
+		resp := string(buffer[:n])
+		printTest(fmt.Sprintf("Command: %s", cmd), true, strings.TrimSpace(resp))
+	}
+	
+	conn.Write([]byte("QUIT\r\n"))
+}
+
+func testFTPMaliciousUploads(host, port, username, password string) {
+	printSection("FTP MALICIOUS FILE UPLOAD ATTEMPTS")
+	
+	maliciousFiles := []string{
+		"shell.php",
+		"backdoor.exe",
+		"webshell.jsp",
+		"malware.sh",
+		"exploit.py",
+		"reverse_shell.pl",
+		"trojan.bat",
+		"rootkit.so",
+	}
+	
+	for _, filename := range maliciousFiles {
+		addr := fmt.Sprintf("%s:%s", host, port)
+		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		
+		if err != nil {
+			printTest(fmt.Sprintf("Upload %s", filename), false, err.Error())
+			continue
+		}
+		
+		buffer := make([]byte, 1024)
+		conn.Read(buffer) // Banner
+		
+		// Login
+		conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
+		time.Sleep(100 * time.Millisecond)
+		conn.Read(buffer)
+		
+		conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
+		time.Sleep(100 * time.Millisecond)
+		conn.Read(buffer)
+		
+		// Try to upload malicious file
+		conn.Write([]byte(fmt.Sprintf("STOR %s\r\n", filename)))
+		time.Sleep(200 * time.Millisecond)
+		n, _ := conn.Read(buffer)
+		response := string(buffer[:n])
+		
+		printTest(fmt.Sprintf("Upload attempt: %s", filename), true, strings.TrimSpace(response))
+		
+		conn.Write([]byte("QUIT\r\n"))
+		conn.Close()
+		
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func testFTPDirectoryTraversal(host, port, username, password string) {
+	printSection("FTP DIRECTORY TRAVERSAL ATTEMPTS")
+	
+	traversalPaths := []string{
+		"/etc",
+		"/etc/passwd",
+		"/var/www",
+		"/root",
+		"../../../etc/passwd",
+		"..\\..\\..\\windows\\system32",
+		"/etc/shadow",
+		"/home",
+	}
+	
+	addr := fmt.Sprintf("%s:%s", host, port)
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	
+	if err != nil {
+		printTest("Directory traversal", false, err.Error())
+		return
+	}
+	defer conn.Close()
+	
+	buffer := make([]byte, 1024)
+	conn.Read(buffer) // Banner
+	
+	// Login
+	conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
+	time.Sleep(100 * time.Millisecond)
+	conn.Read(buffer)
+	
+	conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
+	time.Sleep(100 * time.Millisecond)
+	conn.Read(buffer)
+	
+	// Try directory traversal
+	for _, path := range traversalPaths {
+		conn.Write([]byte(fmt.Sprintf("CWD %s\r\n", path)))
+		time.Sleep(200 * time.Millisecond)
+		n, _ := conn.Read(buffer)
+		response := string(buffer[:n])
+		
+		printTest(fmt.Sprintf("Traversal: %s", path), true, strings.TrimSpace(response))
+		
+		// Try to retrieve file
+		conn.Write([]byte(fmt.Sprintf("RETR %s\r\n", path)))
+		time.Sleep(200 * time.Millisecond)
+		n, _ = conn.Read(buffer)
+		response = string(buffer[:n])
+		
+		printTest(fmt.Sprintf("Retrieve: %s", path), true, strings.TrimSpace(response))
+	}
+	
+	conn.Write([]byte("QUIT\r\n"))
+}
+
+func testFTPCommandInjection(host, port, username, password string) {
+	printSection("FTP COMMAND INJECTION ATTEMPTS")
+	
+	injectionPayloads := []string{
+		"SITE EXEC /bin/bash -i",
+		"SITE CHMOD 777 /etc/passwd",
+		"QUOTE SITE EXEC whoami",
+		"SITE CPFR /etc/passwd",
+		"SITE CPTO /tmp/passwd",
+	}
+	
+	addr := fmt.Sprintf("%s:%s", host, port)
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	
+	if err != nil {
+		printTest("Command injection", false, err.Error())
+		return
+	}
+	defer conn.Close()
+	
+	buffer := make([]byte, 1024)
+	conn.Read(buffer) // Banner
+	
+	// Login
+	conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
+	time.Sleep(100 * time.Millisecond)
+	conn.Read(buffer)
+	
+	conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
+	time.Sleep(100 * time.Millisecond)
+	conn.Read(buffer)
+	
+	// Try command injection
+	for _, payload := range injectionPayloads {
+		conn.Write([]byte(payload + "\r\n"))
+		time.Sleep(200 * time.Millisecond)
+		n, _ := conn.Read(buffer)
+		response := string(buffer[:n])
+		
+		printTest(fmt.Sprintf("Injection: %s", truncate(payload, 40)), true, strings.TrimSpace(response))
+	}
+	
+	conn.Write([]byte("QUIT\r\n"))
 }
 
 // ============================================================================

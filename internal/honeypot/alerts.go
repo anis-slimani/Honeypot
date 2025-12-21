@@ -266,3 +266,35 @@ Système de surveillance automatique
 	am.logger.Infof(emailContent)
 }
 
+// SendFTPAlert envoie une alerte pour le service FTP
+func (am *AlertManager) SendFTPAlert(alertType, severity, message, remoteAddr, username, details string) {
+	alert := &models.Alert{
+		Type:       alertType,
+		Severity:   severity,
+		Message:    message,
+		RemoteAddr: remoteAddr,
+		Details:    details,
+		CreatedAt:  time.Now(),
+		Sent:       false,
+	}
+	
+	// Sauvegarder et envoyer l'alerte
+	am.saveAndLogAlert(alert)
+}
+
+// SendHTTPAlert envoie une alerte pour le service HTTP
+func (am *AlertManager) SendHTTPAlert(alertType, severity, message, remoteAddr, details string) {
+	alert := &models.Alert{
+		Type:       alertType,
+		Severity:   severity,
+		Message:    message,
+		RemoteAddr: remoteAddr,
+		Details:    details,
+		CreatedAt:  time.Now(),
+		Sent:       false,
+	}
+	
+	// Sauvegarder et envoyer l'alerte
+	am.saveAndLogAlert(alert)
+}
+

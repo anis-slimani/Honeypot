@@ -18,12 +18,18 @@ import (
 
 // FTPServer représente le serveur honeypot FTP
 type FTPServer struct {
-	config   *config.FTPConfig
-	logger   logger.Logger
-	db       *sql.DB
-	listener net.Listener
-	mu       sync.RWMutex
-	sessions map[string]*FTPSession
+	config       *config.FTPConfig
+	logger       logger.Logger
+	db           *sql.DB
+	listener     net.Listener
+	mu           sync.RWMutex
+	sessions     map[string]*FTPSession
+	alertManager AlertManager
+}
+
+// AlertManager interface pour envoyer des alertes
+type AlertManager interface {
+	SendFTPAlert(alertType, severity, message, remoteAddr, username, details string)
 }
 
 // FTPSession représente une session FTP active
@@ -49,6 +55,11 @@ func New(cfg *config.FTPConfig, log logger.Logger, database *sql.DB) *FTPServer 
 		db:       database,
 		sessions: make(map[string]*FTPSession),
 	}
+}
+
+// SetAlertManager définit le gestionnaire d'alertes
+func (f *FTPServer) SetAlertManager(am AlertManager) {
+	f.alertManager = am
 }
 
 // Start démarre le serveur FTP honeypot
@@ -582,4 +593,9 @@ func (f *FTPServer) createAlert(session *FTPSession, alertType, severity, messag
 			  VALUES (?, ?, ?, ?, ?, ?, ?)`
 	f.db.Exec(query, alert.Type, alert.Severity, alert.Message, alert.RemoteAddr,
 		alert.Details, alert.CreatedAt, alert.Sent)
+	
+	// Envoyer l'alerte par email si l'AlertManager est configuré
+	if f.alertManager != nil {
+		go f.alertManager.SendFTPAlert(alertType, severity, message, session.RemoteAddr, session.Username, details)
+	}
 }

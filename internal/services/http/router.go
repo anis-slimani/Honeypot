@@ -47,6 +47,18 @@ func NewRouter(cfg *config.HTTPConfig, log logger.Logger, db *sql.DB) *Router {
 	return router
 }
 
+// SetAlertManager définit le gestionnaire d'alertes pour le router et le detector
+func (r *Router) SetAlertManager(am AlertManager) {
+	if r.detector != nil {
+		r.detector.SetAlertManager(am)
+	}
+}
+
+// AlertManager interface pour envoyer des alertes
+type AlertManager interface {
+	SendHTTPAlert(alertType, severity, message, remoteAddr, details string)
+}
+
 // registerApplications registers all honeypot applications
 func (r *Router) registerApplications() {
 	// WordPress

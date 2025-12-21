@@ -51,10 +51,13 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Initialiser le honeypot
+	// Créer l'AlertManager global
+	alertManager := honeypot.NewAlertManager(cfg, logger)
+
+	// Initialiser le honeypot SSH
 	honeypotServer := honeypot.New(cfg, logger, db)
 
-	// Démarrer le serveur honeypot
+	// Démarrer le serveur honeypot SSH
 	go func() {
 		if err := honeypotServer.Start(ctx); err != nil {
 			logger.Errorf("Erreur du serveur honeypot: %v", err)
@@ -64,6 +67,7 @@ func main() {
 	// Démarrer le honeypot HTTP si activé
 	if cfg.HTTP.Enabled {
 		httpServer := httpservice.New(&cfg.HTTP, logger, db)
+		httpServer.SetAlertManager(alertManager)
 		go func() {
 			if err := httpServer.Start(ctx); err != nil {
 				logger.Errorf("Erreur du honeypot HTTP: %v", err)
@@ -79,6 +83,7 @@ func main() {
 	// Démarrer le honeypot FTP si activé
 	if cfg.FTP.Enabled {
 		ftpServer := ftpservice.New(&cfg.FTP, logger, db)
+		ftpServer.SetAlertManager(alertManager)
 		go func() {
 			if err := ftpServer.Start(ctx); err != nil {
 				logger.Errorf("Erreur du honeypot FTP: %v", err)
