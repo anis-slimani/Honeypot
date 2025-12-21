@@ -50,7 +50,7 @@ func main() {
 	flag.StringVar(&config.SSHPort, "ssh-port", "2222", "SSH honeypot port")
 	flag.StringVar(&config.SSHUser, "ssh-user", "admin", "Valid SSH username")
 	flag.StringVar(&config.SSHPass, "ssh-pass", "admin123", "Valid SSH password")
-	flag.StringVar(&config.HTTPURL, "http-url", "http://localhost:8080", "HTTP honeypot URL")
+	flag.StringVar(&config.HTTPURL, "http-url", "http://localhost:80", "HTTP honeypot URL")
 	flag.StringVar(&config.FTPHost, "ftp-host", "localhost", "FTP honeypot host")
 	flag.StringVar(&config.FTPPort, "ftp-port", "2121", "FTP honeypot port")
 	flag.StringVar(&config.FTPUser, "ftp-user", "admin", "Valid FTP username")
