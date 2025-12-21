@@ -809,23 +809,27 @@ func testFTPAnonymousLogin(host, port string) {
 	
 	// Read banner
 	buffer := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	conn.Read(buffer)
 	
 	// Send USER anonymous
 	conn.Write([]byte("USER anonymous\r\n"))
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	n, _ := conn.Read(buffer)
 	response1 := string(buffer[:n])
 	
 	// Send PASS (empty)
 	conn.Write([]byte("PASS \r\n"))
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	n, _ = conn.Read(buffer)
 	response2 := string(buffer[:n])
 	
 	printTest("Anonymous FTP login", true, fmt.Sprintf("Response: %s", strings.TrimSpace(response2)))
 	
 	conn.Write([]byte("QUIT\r\n"))
+	time.Sleep(100 * time.Millisecond)
 }
 
 func testFTPBruteForce(host, port string) {
@@ -850,16 +854,19 @@ func testFTPBruteForce(host, port string) {
 		}
 		
 		buffer := make([]byte, 1024)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		conn.Read(buffer) // Read banner
 		
 		// Send USER
 		conn.Write([]byte("USER admin\r\n"))
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		conn.Read(buffer)
 		
 		// Send PASS
 		conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", pass)))
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		n, _ := conn.Read(buffer)
 		response := string(buffer[:n])
 		
@@ -868,7 +875,7 @@ func testFTPBruteForce(host, port string) {
 		conn.Write([]byte("QUIT\r\n"))
 		conn.Close()
 		
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(400 * time.Millisecond)
 	}
 }
 
@@ -885,16 +892,19 @@ func testFTPValidLogin(host, port, username, password string) {
 	defer conn.Close()
 	
 	buffer := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	conn.Read(buffer) // Read banner
 	
 	// Send USER
 	conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	conn.Read(buffer)
 	
 	// Send PASS
 	conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	n, _ := conn.Read(buffer)
 	response := string(buffer[:n])
 	
@@ -905,13 +915,15 @@ func testFTPValidLogin(host, port, username, password string) {
 	
 	for _, cmd := range commands {
 		conn.Write([]byte(cmd + "\r\n"))
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		n, _ := conn.Read(buffer)
 		resp := string(buffer[:n])
 		printTest(fmt.Sprintf("Command: %s", cmd), true, strings.TrimSpace(resp))
 	}
 	
 	conn.Write([]byte("QUIT\r\n"))
+	time.Sleep(100 * time.Millisecond)
 }
 
 func testFTPMaliciousUploads(host, port, username, password string) {
@@ -938,20 +950,24 @@ func testFTPMaliciousUploads(host, port, username, password string) {
 		}
 		
 		buffer := make([]byte, 1024)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		conn.Read(buffer) // Banner
 		
 		// Login
 		conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		conn.Read(buffer)
 		
 		conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		conn.Read(buffer)
 		
 		// Try to upload malicious file
 		conn.Write([]byte(fmt.Sprintf("STOR %s\r\n", filename)))
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		n, _ := conn.Read(buffer)
 		response := string(buffer[:n])
 		
@@ -960,7 +976,7 @@ func testFTPMaliciousUploads(host, port, username, password string) {
 		conn.Write([]byte("QUIT\r\n"))
 		conn.Close()
 		
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 	}
 }
 
@@ -988,21 +1004,25 @@ func testFTPDirectoryTraversal(host, port, username, password string) {
 	defer conn.Close()
 	
 	buffer := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	conn.Read(buffer) // Banner
 	
 	// Login
 	conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	conn.Read(buffer)
 	
 	conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	conn.Read(buffer)
 	
 	// Try directory traversal
 	for _, path := range traversalPaths {
 		conn.Write([]byte(fmt.Sprintf("CWD %s\r\n", path)))
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		n, _ := conn.Read(buffer)
 		response := string(buffer[:n])
 		
@@ -1010,7 +1030,8 @@ func testFTPDirectoryTraversal(host, port, username, password string) {
 		
 		// Try to retrieve file
 		conn.Write([]byte(fmt.Sprintf("RETR %s\r\n", path)))
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		n, _ = conn.Read(buffer)
 		response = string(buffer[:n])
 		
@@ -1018,6 +1039,7 @@ func testFTPDirectoryTraversal(host, port, username, password string) {
 	}
 	
 	conn.Write([]byte("QUIT\r\n"))
+	time.Sleep(100 * time.Millisecond)
 }
 
 func testFTPCommandInjection(host, port, username, password string) {
@@ -1041,21 +1063,25 @@ func testFTPCommandInjection(host, port, username, password string) {
 	defer conn.Close()
 	
 	buffer := make([]byte, 1024)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	conn.Read(buffer) // Banner
 	
 	// Login
 	conn.Write([]byte(fmt.Sprintf("USER %s\r\n", username)))
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	conn.Read(buffer)
 	
 	conn.Write([]byte(fmt.Sprintf("PASS %s\r\n", password)))
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	conn.Read(buffer)
 	
 	// Try command injection
 	for _, payload := range injectionPayloads {
 		conn.Write([]byte(payload + "\r\n"))
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		n, _ := conn.Read(buffer)
 		response := string(buffer[:n])
 		
@@ -1063,6 +1089,7 @@ func testFTPCommandInjection(host, port, username, password string) {
 	}
 	
 	conn.Write([]byte("QUIT\r\n"))
+	time.Sleep(100 * time.Millisecond)
 }
 
 // ============================================================================
