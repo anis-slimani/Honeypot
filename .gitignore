@@ -1,5 +1,6 @@
 # Binaires
 /honeypot
+/tester
 *.exe
 *.dll
 *.so

@@ -38,6 +38,10 @@ COPY --from=builder /app/config.yaml .
 COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/static ./static
 
+# Copier l'entrypoint
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
 # Créer les dossiers nécessaires
 RUN mkdir -p /root/logs /root/data /root/uploads
 
@@ -45,5 +49,5 @@ RUN mkdir -p /root/logs /root/data /root/uploads
 EXPOSE 2222 80 443 8080
 
 # Commande de démarrage
-CMD ["./honeypot", "-config", "config.yaml"]
+ENTRYPOINT ["./entrypoint.sh"]
 

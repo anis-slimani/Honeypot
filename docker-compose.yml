@@ -13,6 +13,7 @@ services:
       - honeypot-data:/root/data
       - honeypot-uploads:/root/uploads
       - ./config.yaml:/root/config.yaml
+      - .:/host
     restart: unless-stopped
     networks:
       - honeypot-network
