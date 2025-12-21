@@ -20,6 +20,9 @@ RUN go mod tidy
 ENV CGO_CFLAGS="-D_LARGEFILE64_SOURCE"
 RUN CGO_ENABLED=1 GOOS=linux go build -o honeypot .
 
+# Compiler le tester
+RUN CGO_ENABLED=1 GOOS=linux go build -o tester cmd/tester/main.go
+
 # Image finale légère
 FROM alpine:latest
 
@@ -28,8 +31,9 @@ RUN apk --no-cache add ca-certificates sqlite-libs
 
 WORKDIR /root/
 
-# Copier le binaire compilé
+# Copier les binaires compilés
 COPY --from=builder /app/honeypot .
+COPY --from=builder /app/tester .
 COPY --from=builder /app/config.yaml .
 COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/static ./static
