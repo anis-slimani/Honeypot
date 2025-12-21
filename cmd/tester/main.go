@@ -819,7 +819,6 @@ func testFTPAnonymousLogin(host, port string) {
 	buffer = make([]byte, 4096)
 	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	n, _ = conn.Read(buffer)
-	response1 := string(buffer[:n])
 	
 	// Send PASS (empty)
 	conn.Write([]byte("PASS \r\n"))
