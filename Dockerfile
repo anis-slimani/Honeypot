@@ -20,8 +20,8 @@ RUN go mod tidy
 ENV CGO_CFLAGS="-D_LARGEFILE64_SOURCE"
 RUN CGO_ENABLED=1 GOOS=linux go build -o honeypot .
 
-# Compiler le tester
-RUN CGO_ENABLED=1 GOOS=linux go build -o tester cmd/tester/main.go
+# Compiler le tester pour l'hôte (avec glibc, pas musl)
+RUN CGO_ENABLED=0 GOOS=linux go build -o tester cmd/tester/main.go
 
 # Image finale légère
 FROM alpine:latest
