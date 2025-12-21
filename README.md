@@ -1,11 +1,11 @@
-# 🍯 Honey SSH Honeypot
+# 🍯 Honey Multi-Protocol Honeypot
 
-Un honeypot SSH complet développé en Go pour détecter et analyser les tentatives d'intrusion. Ce projet simule un serveur SSH factice pour capturer les activités des attaquants et fournir des insights sur leurs comportements.
+Un honeypot multi-protocoles complet développé en Go pour détecter et analyser les tentatives d'intrusion. Ce projet simule des serveurs **SSH, HTTP, HTTPS et FTP** factices pour capturer les activités des attaquants et fournir des insights sur leurs comportements.
 
 ## 🎯 Objectifs
 
-- **Détection d'intrusion** : Capturer toutes les tentatives de connexion SSH
-- **Analyse comportementale** : Enregistrer et analyser les commandes exécutées
+- **Détection d'intrusion multi-protocoles** : Capturer les attaques SSH, HTTP, HTTPS et FTP
+- **Analyse comportementale** : Enregistrer et analyser les commandes et requêtes
 - **Surveillance en temps réel** : Interface web pour visualiser les attaques
 - **Alertes automatiques** : Notifications par email en cas d'activité suspecte
 - **Géolocalisation** : Identifier l'origine géographique des attaquants
@@ -13,16 +13,26 @@ Un honeypot SSH complet développé en Go pour détecter et analyser les tentati
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Attaquant     │───▶│   Honeypot SSH  │───▶│   Base de       │
-│   (Client SSH)  │    │   (Port 2222)   │    │   Données       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                                ▼
-                       ┌─────────────────┐
-                       │  Interface Web  │
-                       │  (Port 8080)    │
-                       └─────────────────┘
+┌─────────────────┐
+│   Attaquants    │
+│   (Internet)    │
+└────────┬────────┘
+         │
+    ┌────┴────┬────────┬────────┐
+    │         │        │        │
+    ▼         ▼        ▼        ▼
+┌────────┐ ┌───────┐ ┌────┐ ┌─────┐    ┌──────────────┐
+│  SSH   │ │ HTTP  │ │HTTPS│ │ FTP │───▶│   Base de    │
+│ :2222  │ │ :80   │ │:443 │ │:2121│    │   Données    │
+└────────┘ └───────┘ └────┘ └─────┘    │  (SQLite)    │
+                                        └──────┬───────┘
+                                               │
+                                               ▼
+                                     ┌──────────────────┐
+                                     │  Interface Web   │
+                                     │  Dashboard       │
+                                     │  (Port 8080)     │
+                                     └──────────────────┘
 ```
 
 ## 🚀 Installation et Déploiement

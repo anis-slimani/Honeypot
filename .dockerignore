@@ -17,6 +17,8 @@ uploads/
 README.md
 deploy.sh
 test_attacks.sh
+test_*.sh
+send_test_email.go
 *.md
 
 # Ignore IDE files

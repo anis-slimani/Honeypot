@@ -144,6 +144,28 @@ func createTables() error {
 			timestamp DATETIME,
 			FOREIGN KEY (request_id) REFERENCES http_requests (id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS ftp_connections (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			remote_addr TEXT NOT NULL,
+			username TEXT,
+			password TEXT,
+			authenticated BOOLEAN DEFAULT 0,
+			connected_at DATETIME,
+			disconnected_at DATETIME,
+			duration INTEGER,
+			current_dir TEXT DEFAULT '/',
+			login_attempts INTEGER DEFAULT 0,
+			country TEXT,
+			city TEXT
+		)`,
+		`CREATE TABLE IF NOT EXISTS ftp_commands (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			connection_id INTEGER NOT NULL,
+			command TEXT NOT NULL,
+			executed_at DATETIME,
+			response TEXT,
+			FOREIGN KEY (connection_id) REFERENCES ftp_connections (id)
+		)`,
 	}
 
 	for _, query := range queries {

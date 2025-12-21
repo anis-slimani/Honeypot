@@ -791,6 +791,9 @@
             <button class="tab-btn" onclick="switchTab('http')">
                 🌐 HTTP Protocol
             </button>
+            <button class="tab-btn" onclick="switchTab('ftp')">
+                📂 FTP Protocol
+            </button>
             <button class="tab-btn" onclick="switchTab('attacks')">
                 ⚔️ Threat Analysis
             </button>
@@ -1082,6 +1085,86 @@
             </div>
         </div>
 
+        <!-- FTP TAB -->
+        <div id="ftp" class="tab-content">
+            <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+                <div class="stat-card">
+                    <h3>Total Connections</h3>
+                    <div class="stat-value" id="ftpTotalConnections">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Authenticated</h3>
+                    <div class="stat-value" id="ftpAuthenticated">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Failed Logins</h3>
+                    <div class="stat-value" id="ftpFailed">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Commands Executed</h3>
+                    <div class="stat-value" id="ftpTotalCommands">-</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        <span>📂</span>
+                        FTP Connection Log
+                        <span class="section-badge" id="ftpConnBadge">0</span>
+                    </h2>
+                </div>
+                <div class="section-body">
+                    <div class="table-container" id="ftpConnections">
+                        <div class="loading"><div class="spinner"></div>Loading FTP connections...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        <span>⚡</span>
+                        FTP Command History
+                        <span class="section-badge" id="ftpCmdBadge">0</span>
+                    </h2>
+                </div>
+                <div class="section-body">
+                    <div class="table-container" id="ftpCommands">
+                        <div class="loading"><div class="spinner"></div>Loading FTP commands...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        <span>👤</span>
+                        Top FTP Usernames
+                    </h2>
+                </div>
+                <div class="section-body">
+                    <ul class="metric-list" id="ftpTopUsernames">
+                        <li class="loading"><div class="spinner"></div>Loading username data...</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        <span>🔑</span>
+                        Top FTP Commands
+                    </h2>
+                </div>
+                <div class="section-body">
+                    <ul class="metric-list" id="ftpTopCommands">
+                        <li class="loading"><div class="spinner"></div>Loading command data...</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
         <!-- ATTACKS TAB -->
         <div id="attacks" class="tab-content">
             <div class="section">
@@ -1265,6 +1348,7 @@
                 await Promise.all([
                     loadSSHData(),
                     loadHTTPData(),
+                    loadFTPData(),
                     loadHTTPAttacks(),
                     loadHTTPUploads(),
                     loadHTTPCredentials(),
@@ -1419,27 +1503,113 @@
             }
         }
 
-        async function loadHTTPAttacks() {
-            const resp = await fetch('/api/http/attacks?limit=50');
-            const attacks = await resp.json();
-            document.getElementById('attacksBadge').textContent = attacks.length;
+        async function loadFTPData() {
+            // Load FTP statistics
+            const statsResp = await fetch('/api/ftp/statistics');
+            const stats = await statsResp.json();
 
-            if (attacks.length > 0) {
-                let html = '<table><thead><tr><th>Attack Type</th><th>Severity</th><th>Payload</th><th>Pattern</th><th>Timestamp</th></tr></thead><tbody>';
-                attacks.forEach(attack => {
-                    const sevClass = `severity-${attack.severity.toLowerCase()}`;
+            document.getElementById('ftpTotalConnections').textContent = stats.total_connections || 0;
+            document.getElementById('ftpAuthenticated').textContent = stats.authenticated_logins || 0;
+            document.getElementById('ftpFailed').textContent = stats.failed_logins || 0;
+            document.getElementById('ftpTotalCommands').textContent = stats.total_commands || 0;
+
+            // Top usernames
+            if (stats.top_usernames && stats.top_usernames.length > 0) {
+                let html = '';
+                stats.top_usernames.slice(0, 10).forEach((u, i) => {
+                    html += `<li class="metric-item">
+                        <span class="metric-label">👤 ${u.username}</span>
+                        <span class="metric-value">${u.count}</span>
+                    </li>`;
+                });
+                document.getElementById('ftpTopUsernames').innerHTML = html;
+            } else {
+                document.getElementById('ftpTopUsernames').innerHTML = '<li class="no-data">No usernames recorded</li>';
+            }
+
+            // Top commands
+            if (stats.top_commands && stats.top_commands.length > 0) {
+                let html = '';
+                stats.top_commands.slice(0, 10).forEach((c, i) => {
+                    html += `<li class="metric-item">
+                        <span class="metric-label">⚡ ${c.command}</span>
+                        <span class="metric-value">${c.count}</span>
+                    </li>`;
+                });
+                document.getElementById('ftpTopCommands').innerHTML = html;
+            } else {
+                document.getElementById('ftpTopCommands').innerHTML = '<li class="no-data">No commands recorded</li>';
+            }
+
+            // Load FTP connections
+            const connResp = await fetch('/api/ftp/connections?limit=50');
+            const connections = await connResp.json();
+            document.getElementById('ftpConnBadge').textContent = connections.length;
+
+            if (connections.length > 0) {
+                let html = '<table><thead><tr><th>IP</th><th>Username</th><th>Password</th><th>Status</th><th>Duration</th><th>Timestamp</th></tr></thead><tbody>';
+                connections.forEach(conn => {
+                    const statusClass = conn.authenticated ? 'badge-danger' : 'badge-warning';
+                    const statusText = conn.authenticated ? 'Authenticated' : 'Failed';
+                    const duration = conn.duration ? `${conn.duration}s` : '-';
                     html += `<tr>
-                        <td>${getAttackTypeBadge(attack.attack_type)}</td>
-                        <td><span class="${sevClass}">${attack.severity}</span></td>
-                        <td><code style="max-width: 300px; display: block; overflow: hidden; text-overflow: ellipsis;">${attack.payload}</code></td>
-                        <td>${attack.matched_pattern || '-'}</td>
-                        <td>${new Date(attack.timestamp).toLocaleString()}</td>
+                        <td><strong>${conn.remote_addr}</strong></td>
+                        <td><code>${conn.username || '-'}</code></td>
+                        <td><code>${conn.password || '-'}</code></td>
+                        <td><span class="badge ${statusClass}">${statusText}</span></td>
+                        <td>${duration}</td>
+                        <td>${new Date(conn.connected_at).toLocaleString()}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                document.getElementById('ftpConnections').innerHTML = html;
+            } else {
+                document.getElementById('ftpConnections').innerHTML = '<div class="no-data">No FTP connections detected</div>';
+            }
+
+            // Load FTP commands
+            const cmdResp = await fetch('/api/ftp/commands?limit=100');
+            const commands = await cmdResp.json();
+            document.getElementById('ftpCmdBadge').textContent = commands.length;
+
+            if (commands.length > 0) {
+                let html = '<table><thead><tr><th>Command</th><th>Username</th><th>IP</th><th>Timestamp</th></tr></thead><tbody>';
+                commands.forEach(cmd => {
+                    html += `<tr>
+                        <td><code>${cmd.command}</code></td>
+                        <td>${cmd.username || '-'}</td>
+                        <td><strong>${cmd.remote_addr}</strong></td>
+                        <td>${new Date(cmd.executed_at).toLocaleString()}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                document.getElementById('ftpCommands').innerHTML = html;
+            } else {
+                document.getElementById('ftpCommands').innerHTML = '<div class="no-data">No FTP commands logged</div>';
+            }
+        }
+
+        async function loadHTTPAttacks() {
+            const resp = await fetch('/api/dangerous-commands?limit=50');
+            const commands = await resp.json();
+            document.getElementById('attacksBadge').textContent = commands.length;
+
+            if (commands.length > 0) {
+                let html = '<table><thead><tr><th>Danger Level</th><th>Command</th><th>User</th><th>IP Address</th><th>Timestamp</th></tr></thead><tbody>';
+                commands.forEach(cmd => {
+                    const sevClass = `severity-${cmd.danger_level.toLowerCase()}`;
+                    html += `<tr>
+                        <td><span class="${sevClass}">${cmd.danger_icon} ${cmd.danger_level.toUpperCase()}</span></td>
+                        <td><code style="max-width: 400px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${cmd.command}</code></td>
+                        <td>${cmd.username || 'unknown'}</td>
+                        <td>${cmd.remote_addr}</td>
+                        <td>${new Date(cmd.executed_at).toLocaleString()}</td>
                     </tr>`;
                 });
                 html += '</tbody></table>';
                 document.getElementById('httpAttacksTable').innerHTML = html;
             } else {
-                document.getElementById('httpAttacksTable').innerHTML = '<div class="no-data">No threats detected</div>';
+                document.getElementById('httpAttacksTable').innerHTML = '<div class="no-data">No dangerous commands detected</div>';
             }
         }
 

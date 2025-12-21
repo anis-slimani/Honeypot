@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"honey/internal/config"
 	"honey/internal/database"
@@ -41,6 +43,7 @@ func (w *WebServer) Start(ctx context.Context) error {
 	// Routes API - SSH Honeypot
 	mux.HandleFunc("/api/connections", w.handleConnections)
 	mux.HandleFunc("/api/commands", w.handleCommands)
+	mux.HandleFunc("/api/dangerous-commands", w.handleDangerousCommands)
 	mux.HandleFunc("/api/statistics", w.handleStatistics)
 	mux.HandleFunc("/api/alerts", w.handleAlerts)
 
@@ -51,6 +54,11 @@ func (w *WebServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/http/credentials", w.handleHTTPCredentials)
 	mux.HandleFunc("/api/http/scanners", w.handleHTTPScanners)
 	mux.HandleFunc("/api/http/statistics", w.handleHTTPStatistics)
+
+	// Routes API - FTP Honeypot
+	mux.HandleFunc("/api/ftp/connections", w.handleFTPConnections)
+	mux.HandleFunc("/api/ftp/commands", w.handleFTPCommands)
+	mux.HandleFunc("/api/ftp/statistics", w.handleFTPStatistics)
 
 	// Route principale
 	mux.HandleFunc("/", w.handleIndex)
@@ -452,6 +460,137 @@ func (w *WebServer) handleCommands(wr http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(wr).Encode(commands)
 }
 
+// handleDangerousCommands gère les requêtes pour les commandes dangereuses uniquement
+func (w *WebServer) handleDangerousCommands(wr http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	// Patterns de commandes dangereuses
+	dangerousPatterns := []string{
+		"wget", "curl", "nc", "netcat", "/bin/bash -i", "python -c", "perl -e",
+		"bash -i", "sh -i", "base64 -d", "history -c", "rm -rf", "dd if=",
+		"mkfs", "chmod 777", "passwd", "/dev/sda", "ps aux", "netstat",
+		"ifconfig", "who", "last", "cat /etc/passwd", "cat /etc/shadow",
+		"find / -name", "sudo",
+	}
+
+	// Construire la requête SQL avec des conditions OR pour chaque pattern
+	query := `SELECT
+				c.id,
+				c.connection_id,
+				c.command,
+				c.executed_at,
+				c.response,
+				COALESCE(cn.remote_addr, '') as remote_addr,
+				COALESCE(cn.username, '') as username
+			  FROM commands c
+			  LEFT JOIN connections cn ON c.connection_id = cn.id
+			  WHERE (`
+
+	conditions := []string{}
+	args := []interface{}{}
+	for _, pattern := range dangerousPatterns {
+		conditions = append(conditions, "LOWER(c.command) LIKE ?")
+		args = append(args, "%"+strings.ToLower(pattern)+"%")
+	}
+
+	query += strings.Join(conditions, " OR ")
+	query += `) ORDER BY c.executed_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := w.db.Query(query, args...)
+	if err != nil {
+		w.logger.Errorf("Failed to query dangerous commands: %v", err)
+		http.Error(wr, "Failed to get dangerous commands", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type DangerousCommand struct {
+		ID           int       `json:"id"`
+		ConnectionID int       `json:"connection_id"`
+		Command      string    `json:"command"`
+		ExecutedAt   time.Time `json:"executed_at"`
+		Response     string    `json:"response"`
+		RemoteAddr   string    `json:"remote_addr"`
+		Username     string    `json:"username"`
+		DangerLevel  string    `json:"danger_level"`
+		DangerIcon   string    `json:"danger_icon"`
+	}
+
+	var commands []DangerousCommand
+	for rows.Next() {
+		var id, connectionID int
+		var cmdText, response, remoteAddr, username sql.NullString
+		var executedAt sql.NullTime
+
+		err := rows.Scan(&id, &connectionID, &cmdText, &executedAt,
+						&response, &remoteAddr, &username)
+		if err != nil {
+			w.logger.Errorf("Failed to scan dangerous command: %v", err)
+			continue
+		}
+
+		// Analyser le niveau de danger
+		dangerLevel, dangerIcon := analyzeDangerLevel(cmdText.String)
+
+		cmd := DangerousCommand{
+			ID:           id,
+			ConnectionID: connectionID,
+			Command:      cmdText.String,
+			ExecutedAt:   executedAt.Time,
+			Response:     response.String,
+			RemoteAddr:   remoteAddr.String,
+			Username:     username.String,
+			DangerLevel:  dangerLevel,
+			DangerIcon:   dangerIcon,
+		}
+
+		commands = append(commands, cmd)
+	}
+
+	wr.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(wr).Encode(commands)
+}
+
+// analyzeDangerLevel analyse le niveau de danger d'une commande
+func analyzeDangerLevel(command string) (string, string) {
+	cmd := strings.ToLower(command)
+
+	// Commandes critiques
+	if strings.Contains(cmd, "rm -rf") || strings.Contains(cmd, "dd if=") ||
+		strings.Contains(cmd, "mkfs") || strings.Contains(cmd, "chmod 777") ||
+		strings.Contains(cmd, "passwd") || strings.Contains(cmd, "/dev/sda") {
+		return "critical", "🔴"
+	}
+
+	// Commandes hautement suspectes
+	if strings.Contains(cmd, "wget") || strings.Contains(cmd, "curl") ||
+		strings.Contains(cmd, "nc -") || strings.Contains(cmd, "netcat") ||
+		strings.Contains(cmd, "/bin/bash -i") || strings.Contains(cmd, "python -c") ||
+		strings.Contains(cmd, "perl -e") || strings.Contains(cmd, "bash -i") ||
+		strings.Contains(cmd, "sh -i") || strings.Contains(cmd, "base64 -d") ||
+		strings.Contains(cmd, "history -c") {
+		return "high", "🟠"
+	}
+
+	// Commandes moyennement suspectes
+	if strings.Contains(cmd, "ps aux") || strings.Contains(cmd, "netstat") ||
+		strings.Contains(cmd, "ifconfig") || strings.Contains(cmd, "who") ||
+		strings.Contains(cmd, "last") || strings.Contains(cmd, "cat /etc/passwd") ||
+		strings.Contains(cmd, "cat /etc/shadow") || strings.Contains(cmd, "find / -name") ||
+		strings.Contains(cmd, "sudo ") {
+		return "medium", "🟡"
+	}
+
+	return "low", "🔵"
+}
+
 // handleStatistics gère les requêtes pour les statistiques
 func (w *WebServer) handleStatistics(wr http.ResponseWriter, r *http.Request) {
 	stats, err := database.GetStatistics()
@@ -710,6 +849,265 @@ func (w *WebServer) handleHTTPStatistics(wr http.ResponseWriter, r *http.Request
 			rows.Scan(&uas.UserAgent, &uas.Count)
 			stats.TopUserAgents = append(stats.TopUserAgents, uas)
 		}
+	}
+
+	wr.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(wr).Encode(stats)
+}
+
+// handleFTPConnections gère les requêtes pour les connexions FTP
+func (w *WebServer) handleFTPConnections(wr http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 100
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	query := `SELECT id, remote_addr, username, password, authenticated, connected_at,
+			  disconnected_at, duration, current_dir, login_attempts, country, city
+			  FROM ftp_connections ORDER BY connected_at DESC LIMIT ?`
+
+	rows, err := w.db.Query(query, limit)
+	if err != nil {
+		http.Error(wr, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var connections []map[string]interface{}
+	for rows.Next() {
+		var (
+			id             int
+			remoteAddr     string
+			username       sql.NullString
+			password       sql.NullString
+			authenticated  bool
+			connectedAt    time.Time
+			disconnectedAt sql.NullTime
+			duration       sql.NullInt64
+			currentDir     string
+			loginAttempts  int
+			country        sql.NullString
+			city           sql.NullString
+		)
+
+		err := rows.Scan(&id, &remoteAddr, &username, &password, &authenticated,
+			&connectedAt, &disconnectedAt, &duration, &currentDir, &loginAttempts,
+			&country, &city)
+		if err != nil {
+			continue
+		}
+
+		conn := map[string]interface{}{
+			"id":             id,
+			"remote_addr":    remoteAddr,
+			"username":       username.String,
+			"password":       password.String,
+			"authenticated":  authenticated,
+			"connected_at":   connectedAt,
+			"current_dir":    currentDir,
+			"login_attempts": loginAttempts,
+			"country":        country.String,
+			"city":           city.String,
+		}
+
+		if disconnectedAt.Valid {
+			conn["disconnected_at"] = disconnectedAt.Time
+		}
+		if duration.Valid {
+			conn["duration"] = duration.Int64
+		}
+
+		connections = append(connections, conn)
+	}
+
+	wr.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(wr).Encode(connections)
+}
+
+// handleFTPCommands gère les requêtes pour les commandes FTP
+func (w *WebServer) handleFTPCommands(wr http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 100
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	query := `SELECT c.id, c.connection_id, c.command, c.executed_at, c.response,
+			  COALESCE(fc.remote_addr, '') as remote_addr,
+			  COALESCE(fc.username, '') as username
+			  FROM ftp_commands c
+			  LEFT JOIN ftp_connections fc ON c.connection_id = fc.id
+			  ORDER BY c.executed_at DESC LIMIT ?`
+
+	rows, err := w.db.Query(query, limit)
+	if err != nil {
+		http.Error(wr, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var commands []map[string]interface{}
+	for rows.Next() {
+		var (
+			id           int
+			connectionID int
+			command      string
+			executedAt   time.Time
+			response     sql.NullString
+			remoteAddr   string
+			username     string
+		)
+
+		err := rows.Scan(&id, &connectionID, &command, &executedAt, &response,
+			&remoteAddr, &username)
+		if err != nil {
+			continue
+		}
+
+		cmd := map[string]interface{}{
+			"id":            id,
+			"connection_id": connectionID,
+			"command":       command,
+			"executed_at":   executedAt,
+			"remote_addr":   remoteAddr,
+			"username":      username,
+		}
+
+		if response.Valid {
+			cmd["response"] = response.String
+		}
+
+		commands = append(commands, cmd)
+	}
+
+	wr.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(wr).Encode(commands)
+}
+
+// handleFTPStatistics gère les statistiques FTP
+func (w *WebServer) handleFTPStatistics(wr http.ResponseWriter, r *http.Request) {
+	stats := make(map[string]interface{})
+
+	// Total connexions FTP
+	var totalConnections int
+	err := w.db.QueryRow("SELECT COUNT(*) FROM ftp_connections").Scan(&totalConnections)
+	if err == nil {
+		stats["total_connections"] = totalConnections
+	}
+
+	// Connexions authentifiées
+	var authenticatedLogins int
+	err = w.db.QueryRow("SELECT COUNT(*) FROM ftp_connections WHERE authenticated = 1").Scan(&authenticatedLogins)
+	if err == nil {
+		stats["authenticated_logins"] = authenticatedLogins
+	}
+
+	// Tentatives échouées
+	var failedLogins int
+	err = w.db.QueryRow("SELECT COUNT(*) FROM ftp_connections WHERE authenticated = 0 AND username IS NOT NULL").Scan(&failedLogins)
+	if err == nil {
+		stats["failed_logins"] = failedLogins
+	}
+
+	// Total commandes FTP
+	var totalCommands int
+	err = w.db.QueryRow("SELECT COUNT(*) FROM ftp_commands").Scan(&totalCommands)
+	if err == nil {
+		stats["total_commands"] = totalCommands
+	}
+
+	// Attaquants uniques
+	var uniqueAttackers int
+	err = w.db.QueryRow("SELECT COUNT(DISTINCT remote_addr) FROM ftp_connections").Scan(&uniqueAttackers)
+	if err == nil {
+		stats["unique_attackers"] = uniqueAttackers
+	}
+
+	// Connexions dernières 24h
+	var last24h int
+	err = w.db.QueryRow("SELECT COUNT(*) FROM ftp_connections WHERE connected_at > datetime('now', '-1 day')").Scan(&last24h)
+	if err == nil {
+		stats["connections_last_24h"] = last24h
+	}
+
+	// Top usernames
+	rows, err := w.db.Query(`SELECT username, COUNT(*) as count FROM ftp_connections
+							 WHERE username IS NOT NULL AND username != ''
+							 GROUP BY username ORDER BY count DESC LIMIT 10`)
+	if err == nil {
+		defer rows.Close()
+		var topUsernames []map[string]interface{}
+		for rows.Next() {
+			var username string
+			var count int
+			rows.Scan(&username, &count)
+			topUsernames = append(topUsernames, map[string]interface{}{
+				"username": username,
+				"count":    count,
+			})
+		}
+		stats["top_usernames"] = topUsernames
+	}
+
+	// Top passwords
+	rows, err = w.db.Query(`SELECT password, COUNT(*) as count FROM ftp_connections
+							 WHERE password IS NOT NULL AND password != ''
+							 GROUP BY password ORDER BY count DESC LIMIT 10`)
+	if err == nil {
+		defer rows.Close()
+		var topPasswords []map[string]interface{}
+		for rows.Next() {
+			var password string
+			var count int
+			rows.Scan(&password, &count)
+			topPasswords = append(topPasswords, map[string]interface{}{
+				"password": password,
+				"count":    count,
+			})
+		}
+		stats["top_passwords"] = topPasswords
+	}
+
+	// Top commands
+	rows, err = w.db.Query(`SELECT command, COUNT(*) as count FROM ftp_commands
+							 GROUP BY command ORDER BY count DESC LIMIT 10`)
+	if err == nil {
+		defer rows.Close()
+		var topCommands []map[string]interface{}
+		for rows.Next() {
+			var command string
+			var count int
+			rows.Scan(&command, &count)
+			topCommands = append(topCommands, map[string]interface{}{
+				"command": command,
+				"count":   count,
+			})
+		}
+		stats["top_commands"] = topCommands
+	}
+
+	// Top pays
+	rows, err = w.db.Query(`SELECT country, COUNT(*) as count FROM ftp_connections
+							 WHERE country IS NOT NULL AND country != ''
+							 GROUP BY country ORDER BY count DESC LIMIT 10`)
+	if err == nil {
+		defer rows.Close()
+		var topCountries []map[string]interface{}
+		for rows.Next() {
+			var country string
+			var count int
+			rows.Scan(&country, &count)
+			topCountries = append(topCountries, map[string]interface{}{
+				"country": country,
+				"count":   count,
+			})
+		}
+		stats["top_countries"] = topCountries
 	}
 
 	wr.Header().Set("Content-Type", "application/json")

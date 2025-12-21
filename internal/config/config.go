@@ -15,6 +15,7 @@ type Config struct {
 	Logging     LoggingConfig     `yaml:"logging"`
 	Web         WebConfig         `yaml:"web"`
 	HTTP        HTTPConfig        `yaml:"http"`
+	FTP         FTPConfig         `yaml:"ftp"`
 	Alerts      AlertsConfig      `yaml:"alerts"`
 	Geolocation GeolocationConfig `yaml:"geolocation"`
 }
@@ -154,6 +155,17 @@ type AdminPanelsConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
+// FTPConfig configuration du honeypot FTP
+type FTPConfig struct {
+	Enabled        bool       `yaml:"enabled"`
+	Host           string     `yaml:"host"`
+	Port           int        `yaml:"port"`
+	PassivePortMin int        `yaml:"passive_port_min"`
+	PassivePortMax int        `yaml:"passive_port_max"`
+	FakeUsers      []FakeUser `yaml:"fake_users"`
+	AllowAnonymous bool       `yaml:"allow_anonymous"`
+}
+
 // Load charge la configuration depuis un fichier YAML
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -260,6 +272,20 @@ func (c *Config) validate() error {
 	}
 	if c.HTTP.Applications.Upload.QuarantineDir == "" {
 		c.HTTP.Applications.Upload.QuarantineDir = "./uploads"
+	}
+
+	// Valeurs par défaut pour FTP
+	if c.FTP.Host == "" {
+		c.FTP.Host = "0.0.0.0"
+	}
+	if c.FTP.Port == 0 {
+		c.FTP.Port = 2121
+	}
+	if c.FTP.PassivePortMin == 0 {
+		c.FTP.PassivePortMin = 50000
+	}
+	if c.FTP.PassivePortMax == 0 {
+		c.FTP.PassivePortMax = 50100
 	}
 
 	return nil

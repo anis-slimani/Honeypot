@@ -135,7 +135,9 @@ func (am *AlertManager) analyzeDangerLevel(command string) string {
 		"bash -i",
 		"sh -i",
 		"base64 -d",
-		"echo ",
+		"echo.*>.*passwd",
+		"echo.*>.*shadow",
+		"echo.*>.*authorized_keys",
 		"history -c",
 	}
 

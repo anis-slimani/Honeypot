@@ -1,11 +1,10 @@
-version: '3.8'
-
 services:
   honeypot:
     build: .
     container_name: honey-ssh-honeypot
     ports:
       - "2222:2222"  # SSH honeypot (fake SSH server)
+      - "2121:2121"  # FTP honeypot
       - "80:80"      # HTTP honeypot (WordPress, phpMyAdmin, etc.)
       - "8080:8080"  # Web dashboard with dark mode
       - "443:443"    # HTTPS honeypot (if TLS enabled)

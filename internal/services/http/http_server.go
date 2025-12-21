@@ -19,7 +19,7 @@ import (
 	"honey/internal/models"
 )
 
-// HTTPHoneypot represents the HTTP honeypot server
+// HTTPHoneypot représente le serveur honeypot HTTP
 type HTTPHoneypot struct {
 	config        *config.HTTPConfig
 	logger        logger.Logger
@@ -30,7 +30,7 @@ type HTTPHoneypot struct {
 	requestCounts map[string]*RequestCount
 }
 
-// RequestCount tracks requests per IP for scanner detection
+// RequestCount suit les requêtes par IP pour la détection de scanners
 type RequestCount struct {
 	Count      int
 	FirstSeen  time.Time
@@ -38,7 +38,7 @@ type RequestCount struct {
 	UserAgent  string
 }
 
-// New creates a new HTTP honeypot instance
+// New crée une nouvelle instance du honeypot HTTP
 func New(cfg *config.HTTPConfig, log logger.Logger, db *sql.DB) *HTTPHoneypot {
 	hp := &HTTPHoneypot{
 		config:        cfg,
@@ -62,29 +62,29 @@ func New(cfg *config.HTTPConfig, log logger.Logger, db *sql.DB) *HTTPHoneypot {
 	return hp
 }
 
-// Start starts the HTTP honeypot server
+// Start démarre le serveur honeypot HTTP
 func (h *HTTPHoneypot) Start(ctx context.Context) error {
-	h.logger.Infof("Starting HTTP honeypot on %s", h.server.Addr)
+	h.logger.Infof("Démarrage du honeypot HTTP sur %s", h.server.Addr)
 
 	errChan := make(chan error, 1)
 
 	go func() {
 		if h.config.TLS.Enabled {
-			h.logger.Info("Starting HTTPS server...")
+			h.logger.Info("Démarrage du serveur HTTPS...")
 			if err := h.server.ListenAndServeTLS(h.config.TLS.CertFile, h.config.TLS.KeyFile); err != nil && err != http.ErrServerClosed {
-				errChan <- fmt.Errorf("HTTPS server error: %w", err)
+				errChan <- fmt.Errorf("erreur serveur HTTPS: %w", err)
 			}
 		} else {
 			if err := h.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				errChan <- fmt.Errorf("HTTP server error: %w", err)
+				errChan <- fmt.Errorf("erreur serveur HTTP: %w", err)
 			}
 		}
 	}()
 
-	// Wait for context cancellation or error
+	// Attendre l'annulation du contexte ou une erreur
 	select {
 	case <-ctx.Done():
-		h.logger.Info("Shutting down HTTP honeypot...")
+		h.logger.Info("Arrêt du honeypot HTTP...")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return h.server.Shutdown(shutdownCtx)
@@ -93,26 +93,26 @@ func (h *HTTPHoneypot) Start(ctx context.Context) error {
 	}
 }
 
-// Stop stops the HTTP honeypot server
+// Stop arrête le serveur honeypot HTTP
 func (h *HTTPHoneypot) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return h.server.Shutdown(ctx)
 }
 
-// handleRequest is the main request handler
+// handleRequest est le gestionnaire principal des requêtes
 func (h *HTTPHoneypot) handleRequest(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
-	// Get client IP
+	// Obtenir l'IP du client
 	clientIP := h.getClientIP(r)
 
-	h.logger.Infof("[HTTP] %s %s %s from %s", r.Method, r.URL.Path, r.Proto, clientIP)
+	h.logger.Infof("[HTTP] %s %s %s depuis %s", r.Method, r.URL.Path, r.Proto, clientIP)
 
-	// Track request for scanner detection
+	// Suivre la requête pour la détection de scanners
 	h.trackRequest(clientIP, r.UserAgent())
 
-	// Read request body (except for multipart uploads)
+	// Lire le corps de la requête (sauf pour les uploads multipart)
 	var body string
 	contentType := r.Header.Get("Content-Type")
 	if !strings.Contains(contentType, "multipart/form-data") {
@@ -121,10 +121,10 @@ func (h *HTTPHoneypot) handleRequest(w http.ResponseWriter, r *http.Request) {
 		body = string(bodyBytes)
 	}
 
-	// Capture headers
+	// Capturer les en-têtes
 	headersJSON, _ := json.Marshal(r.Header)
 
-	// Create HTTP request record
+	// Créer l'enregistrement de la requête HTTP
 	httpReq := &models.HTTPRequest{
 		RemoteAddr:  clientIP,
 		Method:      r.Method,

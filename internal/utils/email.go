@@ -50,67 +50,45 @@ func (s *SMTPEmailSender) buildAlertSubject(alert *models.Alert) string {
 		"medium":   "🟡",
 		"low":      "🔵",
 	}
-	
+
 	icon := severityIcon[alert.Severity]
 	if icon == "" {
 		icon = "⚪"
 	}
-	
-	// Extraire le username si disponible
-	username := ""
-	if strings.Contains(alert.Details, "Username:") {
-		parts := strings.Split(alert.Details, "Username: ")
-		if len(parts) > 1 {
-			userPart := strings.Split(parts[1], ",")[0]
-			username = strings.TrimSpace(userPart)
-		}
-	}
-	
+
+	ip := s.formatIP(alert.RemoteAddr)
+
 	// Construire le sujet selon le type d'alerte
 	switch alert.Type {
 	case "successful_login":
-		if username != "" {
-			return fmt.Sprintf("%s INTRUSION - Connexion réussie (%s) depuis %s", 
-				icon, username, s.formatIP(alert.RemoteAddr))
-		}
-		return fmt.Sprintf("%s INTRUSION - Connexion réussie depuis %s", 
-			icon, s.formatIP(alert.RemoteAddr))
-			
+		return fmt.Sprintf("%s HONEYPOT ALERT - Successful Login from %s", icon, ip)
+
 	case "brute_force":
-		return fmt.Sprintf("%s ATTAQUE - Force brute détectée depuis %s", 
-			icon, s.formatIP(alert.RemoteAddr))
-			
+		return fmt.Sprintf("%s HONEYPOT ALERT - Brute Force Attack from %s", icon, ip)
+
 	case "dangerous_command":
-		// Extraire la commande
+		// Extraire la commande pour un aperçu court
 		command := ""
 		if strings.Contains(alert.Details, "Command:") {
 			parts := strings.Split(alert.Details, "Command: ")
 			if len(parts) > 1 {
 				command = strings.TrimSpace(parts[1])
-				// Limiter à 30 caractères pour le sujet
-				if len(command) > 30 {
-					command = command[:27] + "..."
+				// Limiter à 25 caractères pour le sujet
+				if len(command) > 25 {
+					command = command[:22] + "..."
 				}
 			}
 		}
 		if command != "" {
-			return fmt.Sprintf("%s COMMANDE SUSPECTE - '%s' par %s", 
-				icon, command, s.formatIP(alert.RemoteAddr))
+			return fmt.Sprintf("%s HONEYPOT ALERT - Suspicious Command '%s' from %s", icon, command, ip)
 		}
-		return fmt.Sprintf("%s COMMANDE SUSPECTE depuis %s", 
-			icon, s.formatIP(alert.RemoteAddr))
-			
+		return fmt.Sprintf("%s HONEYPOT ALERT - Suspicious Command from %s", icon, ip)
+
 	case "failed_login":
-		if username != "" {
-			return fmt.Sprintf("%s Tentative échouée (%s) depuis %s", 
-				icon, username, s.formatIP(alert.RemoteAddr))
-		}
-		return fmt.Sprintf("%s Tentative échouée depuis %s", 
-			icon, s.formatIP(alert.RemoteAddr))
-			
+		return fmt.Sprintf("%s HONEYPOT ALERT - Failed Login from %s", icon, ip)
+
 	default:
-		return fmt.Sprintf("%s [HONEYPOT] %s - %s", 
-			icon, strings.ToUpper(alert.Severity), alert.Type)
+		return fmt.Sprintf("%s HONEYPOT ALERT - %s from %s", icon, strings.ToUpper(alert.Severity), ip)
 	}
 }
 
@@ -140,53 +118,53 @@ Serveur: Honey SSH Honeypot`
 func (s *SMTPEmailSender) buildAlertEmailBody(alert *models.Alert) string {
 	var body strings.Builder
 
-	// En-tête avec emoji selon la sévérité
+	// En-tête simple et professionnel
 	severityEmoji := s.getSeverityEmoji(alert.Severity)
-	body.WriteString("╔════════════════════════════════════════════════════════════════╗\n")
-	body.WriteString(fmt.Sprintf("║  %s  ALERTE HONEYPOT - %s                      \n", severityEmoji, strings.ToUpper(alert.Severity)))
-	body.WriteString("╚════════════════════════════════════════════════════════════════╝\n\n")
+	body.WriteString("HONEYPOT SECURITY ALERT\n")
+	body.WriteString("========================================\n\n")
 
-	// Informations principales
-	body.WriteString("📋 INFORMATIONS GÉNÉRALES\n")
-	body.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	body.WriteString(fmt.Sprintf("Type d'alerte    : %s\n", s.formatAlertType(alert.Type)))
-	body.WriteString(fmt.Sprintf("Niveau de risque : %s\n", s.formatSeverity(alert.Severity)))
-	body.WriteString(fmt.Sprintf("Date et heure    : %s\n", alert.CreatedAt.Format("2006-01-02 à 15:04:05 MST")))
-	body.WriteString(fmt.Sprintf("Message          : %s\n\n", alert.Message))
+	// Niveau de criticité
+	body.WriteString(fmt.Sprintf("CRITICALITY: %s %s\n", severityEmoji, strings.ToUpper(alert.Severity)))
+	body.WriteString(fmt.Sprintf("ALERT TYPE: %s\n", s.formatAlertType(alert.Type)))
+	body.WriteString(fmt.Sprintf("TIMESTAMP: %s\n\n", alert.CreatedAt.Format("2006-01-02 15:04:05 MST")))
 
-	// Informations sur l'attaquant
-	body.WriteString("👤 INFORMATIONS SUR L'ATTAQUANT\n")
-	body.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	body.WriteString(fmt.Sprintf("Adresse IP       : %s\n", alert.RemoteAddr))
-	
-	// Extraire les détails selon le type d'alerte
+	// Informations essentielles
+	body.WriteString("THREAT DETAILS\n")
+	body.WriteString("----------------------------------------\n")
+
+	// Extraire les détails
 	details := s.parseAlertDetails(alert)
-	
+
+	// IP Address (toujours affichée)
+	body.WriteString(fmt.Sprintf("Source IP: %s\n", alert.RemoteAddr))
+
+	// Username (mais pas le password)
 	if username, ok := details["username"]; ok {
-		body.WriteString(fmt.Sprintf("Nom d'utilisateur: %s\n", username))
+		body.WriteString(fmt.Sprintf("Username: %s\n", username))
 	}
-	
-	if password, ok := details["password"]; ok {
-		body.WriteString(fmt.Sprintf("Mot de passe     : %s\n", password))
+
+	// Commande exécutée (pour dangerous_command)
+	if command, ok := details["command"]; ok {
+		body.WriteString(fmt.Sprintf("Command Executed: %s\n", command))
 	}
-	
-	if attempts, ok := details["attempts"]; ok {
-		body.WriteString(fmt.Sprintf("Tentatives       : %s\n", attempts))
+
+	// Nombre de tentatives (pour brute force)
+	if attempts, ok := details["total attempts"]; ok {
+		body.WriteString(fmt.Sprintf("Failed Attempts: %s\n", attempts))
 	}
-	
+
 	body.WriteString("\n")
 
-	// Détails spécifiques selon le type d'alerte
-	body.WriteString(s.buildTypeSpecificDetails(alert, details))
+	// Analyse de menace spécifique
+	body.WriteString(s.buildThreatAnalysis(alert, details))
 
-	// Recommandations
-	body.WriteString(s.buildRecommendations(alert))
+	// Recommandations d'action
+	body.WriteString(s.buildActionRecommendations(alert))
 
 	// Footer
-	body.WriteString("\n╔════════════════════════════════════════════════════════════════╗\n")
-	body.WriteString("║  Honey SSH Honeypot - Système de surveillance automatique     ║\n")
-	body.WriteString("║  🌐 Dashboard: http://localhost:8080                           ║\n")
-	body.WriteString("╚════════════════════════════════════════════════════════════════╝\n")
+	body.WriteString("\n========================================\n")
+	body.WriteString("Honey SSH Honeypot - Security Monitoring System\n")
+	body.WriteString("Dashboard: http://localhost:8080\n")
 
 	return body.String()
 }
@@ -259,127 +237,97 @@ func (s *SMTPEmailSender) parseAlertDetails(alert *models.Alert) map[string]stri
 	return details
 }
 
-// buildTypeSpecificDetails construit les détails spécifiques selon le type d'alerte
-func (s *SMTPEmailSender) buildTypeSpecificDetails(alert *models.Alert, details map[string]string) string {
+// buildThreatAnalysis construit une analyse concise de la menace
+func (s *SMTPEmailSender) buildThreatAnalysis(alert *models.Alert, details map[string]string) string {
 	var body strings.Builder
-	
+
+	body.WriteString("THREAT ANALYSIS\n")
+	body.WriteString("----------------------------------------\n")
+
 	switch alert.Type {
 	case "successful_login":
-		body.WriteString("✅ DÉTAILS DE LA CONNEXION\n")
-		body.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		body.WriteString("Un attaquant a réussi à se connecter au honeypot avec des\n")
-		body.WriteString("identifiants valides. Cela indique une tentative d'intrusion\n")
-		body.WriteString("active sur votre système.\n\n")
-		body.WriteString("⚠️  L'attaquant a maintenant accès au shell factice et peut\n")
-		body.WriteString("    exécuter des commandes qui seront enregistrées.\n\n")
-		
+		body.WriteString("Status: ACTIVE INTRUSION\n")
+		body.WriteString("An attacker successfully authenticated to the honeypot.\n")
+		body.WriteString("The attacker now has access to the fake shell environment.\n\n")
+
 	case "brute_force":
-		body.WriteString("⚔️  DÉTAILS DE L'ATTAQUE\n")
-		body.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		body.WriteString("Une attaque automatisée par force brute a été détectée.\n")
-		body.WriteString("L'attaquant tente de deviner les identifiants en essayant\n")
-		body.WriteString("plusieurs combinaisons username/password.\n\n")
-		
+		body.WriteString("Status: BRUTE FORCE ATTACK DETECTED\n")
+		body.WriteString("Multiple failed authentication attempts detected.\n")
 		if attempts, ok := details["total attempts"]; ok {
-			body.WriteString(fmt.Sprintf("Nombre de tentatives : %s\n", attempts))
+			body.WriteString(fmt.Sprintf("Total attempts: %s in 5 minutes\n", attempts))
 		}
-		body.WriteString("Fenêtre de temps     : 5 minutes\n")
-		body.WriteString("Seuil de détection   : 5 tentatives\n\n")
-		
+		body.WriteString("Detection threshold: 5 attempts\n\n")
+
 	case "dangerous_command":
-		body.WriteString("⚠️  COMMANDE EXÉCUTÉE\n")
-		body.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		
+		body.WriteString("Status: MALICIOUS COMMAND EXECUTED\n")
+
 		if command, ok := details["command"]; ok {
-			body.WriteString(fmt.Sprintf("Commande : %s\n\n", command))
-			
-			// Analyser le type de commande
 			cmdLower := strings.ToLower(command)
-			body.WriteString("Type de menace détectée :\n")
-			
+
+			// Analyse concise du type de menace
 			if strings.Contains(cmdLower, "wget") || strings.Contains(cmdLower, "curl") {
-				body.WriteString("  🔻 Téléchargement de fichier malveillant\n")
-				body.WriteString("     → L'attaquant tente de télécharger un script ou malware\n\n")
-			}
-			if strings.Contains(cmdLower, "rm -rf") {
-				body.WriteString("  💣 Tentative de destruction de données\n")
-				body.WriteString("     → Commande de suppression récursive détectée\n\n")
-			}
-			if strings.Contains(cmdLower, "sudo") || strings.Contains(cmdLower, "su") {
-				body.WriteString("  🔐 Tentative d'élévation de privilèges\n")
-				body.WriteString("     → L'attaquant cherche à obtenir les droits root\n\n")
-			}
-			if strings.Contains(cmdLower, "chmod 777") || strings.Contains(cmdLower, "chmod +x") {
-				body.WriteString("  🔓 Modification des permissions\n")
-				body.WriteString("     → Tentative de rendre des fichiers exécutables\n\n")
-			}
-			if strings.Contains(cmdLower, "nc") || strings.Contains(cmdLower, "netcat") {
-				body.WriteString("  🌐 Reverse shell / Backdoor\n")
-				body.WriteString("     → Tentative d'établir une connexion sortante\n\n")
-			}
-			if strings.Contains(cmdLower, "python -c") || strings.Contains(cmdLower, "perl -e") || strings.Contains(cmdLower, "bash -i") {
-				body.WriteString("  💻 Exécution de code arbitraire\n")
-				body.WriteString("     → Script malveillant exécuté directement\n\n")
-			}
-			if strings.Contains(cmdLower, "cat /etc/passwd") || strings.Contains(cmdLower, "cat /etc/shadow") {
-				body.WriteString("  👁️  Énumération du système\n")
-				body.WriteString("     → Collecte d'informations sur les utilisateurs\n\n")
-			}
-			if strings.Contains(cmdLower, "history -c") {
-				body.WriteString("  🧹 Effacement des traces\n")
-				body.WriteString("     → Tentative de supprimer l'historique des commandes\n\n")
+				body.WriteString("Threat Type: Malware Download Attempt\n")
+			} else if strings.Contains(cmdLower, "rm -rf") {
+				body.WriteString("Threat Type: Data Destruction Attempt\n")
+			} else if strings.Contains(cmdLower, "sudo") || strings.Contains(cmdLower, "su") {
+				body.WriteString("Threat Type: Privilege Escalation Attempt\n")
+			} else if strings.Contains(cmdLower, "chmod 777") {
+				body.WriteString("Threat Type: Permission Modification\n")
+			} else if strings.Contains(cmdLower, "nc") || strings.Contains(cmdLower, "netcat") {
+				body.WriteString("Threat Type: Reverse Shell / Backdoor Attempt\n")
+			} else if strings.Contains(cmdLower, "python -c") || strings.Contains(cmdLower, "perl -e") || strings.Contains(cmdLower, "bash -i") {
+				body.WriteString("Threat Type: Arbitrary Code Execution\n")
+			} else if strings.Contains(cmdLower, "cat /etc/passwd") || strings.Contains(cmdLower, "cat /etc/shadow") {
+				body.WriteString("Threat Type: System Enumeration\n")
+			} else if strings.Contains(cmdLower, "history -c") {
+				body.WriteString("Threat Type: Anti-Forensics / Cover Tracks\n")
+			} else {
+				body.WriteString("Threat Type: Suspicious Activity\n")
 			}
 		}
-		
+		body.WriteString("\n")
+
 	case "failed_login":
-		body.WriteString("🔒 TENTATIVE ÉCHOUÉE\n")
-		body.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		body.WriteString("Tentative de connexion avec des identifiants incorrects.\n")
-		body.WriteString("Cela peut être une reconnaissance ou le début d'une attaque.\n\n")
+		body.WriteString("Status: FAILED AUTHENTICATION\n")
+		body.WriteString("Invalid credentials used - possible reconnaissance.\n\n")
 	}
-	
+
 	return body.String()
 }
 
-// buildRecommendations construit les recommandations selon la sévérité
-func (s *SMTPEmailSender) buildRecommendations(alert *models.Alert) string {
+// buildActionRecommendations construit les recommandations d'action
+func (s *SMTPEmailSender) buildActionRecommendations(alert *models.Alert) string {
 	var body strings.Builder
-	
-	body.WriteString("💡 RECOMMANDATIONS\n")
-	body.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	
+
+	body.WriteString("RECOMMENDED ACTIONS\n")
+	body.WriteString("----------------------------------------\n")
+
 	switch alert.Severity {
 	case "critical":
-		body.WriteString("⚠️  ACTION IMMÉDIATE REQUISE :\n")
-		body.WriteString("  1. Vérifiez immédiatement le dashboard pour plus de détails\n")
-		body.WriteString("  2. Analysez toutes les commandes exécutées par cet attaquant\n")
-		body.WriteString("  3. Bloquez cette IP dans votre firewall si nécessaire\n")
-		body.WriteString("  4. Vérifiez vos vrais serveurs pour des activités similaires\n")
-		body.WriteString(fmt.Sprintf("  5. Considérez le signalement de %s aux autorités\n\n", alert.RemoteAddr))
-		
+		body.WriteString("IMMEDIATE ACTION REQUIRED:\n")
+		body.WriteString("1. Review all activity from this IP immediately\n")
+		body.WriteString("2. Consider blocking this IP in your firewall\n")
+		body.WriteString("3. Check production systems for similar activity\n")
+		body.WriteString("4. Consider reporting to authorities if necessary\n\n")
+
 	case "high":
-		body.WriteString("⚠️  ATTENTION REQUISE :\n")
-		body.WriteString("  1. Consultez le dashboard pour analyser l'activité\n")
-		body.WriteString("  2. Surveillez cette IP pour d'autres tentatives\n")
-		body.WriteString("  3. Vérifiez que vos vrais services ne sont pas exposés\n")
-		body.WriteString(fmt.Sprintf("  4. Envisagez de bloquer %s temporairement\n\n", alert.RemoteAddr))
-		
+		body.WriteString("ACTION RECOMMENDED:\n")
+		body.WriteString("1. Monitor this IP for continued activity\n")
+		body.WriteString("2. Review the dashboard for full details\n")
+		body.WriteString("3. Consider temporary IP blocking\n\n")
+
 	case "medium":
-		body.WriteString("ℹ️  SURVEILLANCE RECOMMANDÉE :\n")
-		body.WriteString("  1. Notez cette activité dans vos logs\n")
-		body.WriteString("  2. Surveillez si l'activité continue\n")
-		body.WriteString("  3. Pas d'action immédiate requise\n\n")
-		
+		body.WriteString("MONITORING RECOMMENDED:\n")
+		body.WriteString("1. Log this activity for future reference\n")
+		body.WriteString("2. Monitor for pattern changes\n\n")
+
 	case "low":
-		body.WriteString("ℹ️  INFORMATION :\n")
-		body.WriteString("  • Cette alerte est à titre informatif\n")
-		body.WriteString("  • Aucune action immédiate n'est nécessaire\n")
-		body.WriteString("  • Les données sont enregistrées pour analyse ultérieure\n\n")
+		body.WriteString("NO IMMEDIATE ACTION REQUIRED:\n")
+		body.WriteString("Activity logged for analysis.\n\n")
 	}
-	
-	body.WriteString("📊 Pour plus de détails, consultez le dashboard : http://localhost:8080\n")
-	body.WriteString(fmt.Sprintf("🔍 Recherchez l'IP : %s\n", alert.RemoteAddr))
-	
+
+	body.WriteString(fmt.Sprintf("View full details: http://localhost:8080\nSearch for IP: %s\n", alert.RemoteAddr))
+
 	return body.String()
 }
 
@@ -397,7 +345,7 @@ func (s *SMTPEmailSender) sendEmail(subject, body string) error {
 	// Envoi de l'email
 	if s.config.SMTPPort == 587 {
 		// Utiliser STARTTLS pour le port 587 (Gmail, Outlook, etc.)
-		return s.sendEmailSTARTTLS(addr, auth, s.config.From, s.config.To, msg)
+		return s.sendEmailSTARTTLS(addr, auth, s.config.From, s.config.To, []byte(msg))
 	} else {
 		// Utiliser SMTP standard pour les autres ports
 		return smtp.SendMail(addr, auth, s.config.From, s.config.To, []byte(msg))

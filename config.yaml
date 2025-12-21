@@ -116,3 +116,19 @@ http:
       virustotal_api_key: ""
     admin_panels:
       enabled: true
+
+# Configuration du honeypot FTP
+ftp:
+  enabled: true
+  host: "0.0.0.0"
+  port: 2121  # Port FTP (21 nécessite root, on utilise 2121)
+  passive_port_min: 50000
+  passive_port_max: 50100
+  allow_anonymous: true
+  fake_users:
+    - username: "admin"
+      password: "admin123"
+    - username: "ftpuser"
+      password: "password"
+    - username: "anonymous"
+      password: ""
