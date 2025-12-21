@@ -54,11 +54,6 @@ func (r *Router) SetAlertManager(am AlertManager) {
 	}
 }
 
-// AlertManager interface pour envoyer des alertes
-type AlertManager interface {
-	SendHTTPAlert(alertType, severity, message, remoteAddr, details string)
-}
-
 // registerApplications registers all honeypot applications
 func (r *Router) registerApplications() {
 	// WordPress
