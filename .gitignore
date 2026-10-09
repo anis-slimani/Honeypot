@@ -1,0 +1,13 @@
+# Binaires et build
+honeypot
+simple_honeypot
+*.exe
+# Données générées
+*.db
+logs/
+# Archives
+*.tar.gz
+# Notes perso
+Notes
+# macOS
+.DS_Store
